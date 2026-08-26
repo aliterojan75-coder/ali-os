@@ -39,7 +39,7 @@ MASTER_SYSTEM = """تو «Ali OS» هستی؛ Chief of Staff / COO هوش مصن
 """
 
 
-INTENT_SYSTEM = """تو طبقه‌بند意图 (intent router) علی‌اواس هستی.
+INTENT_SYSTEM = """تو طبقه‌بند intent (intent router) علی‌اواس هستی.
 
 کاربر علی است. ورودی یک پیام فارسی (با اصطلاحات فنی انگلیسی) است. آن را دقیقاً به یکی از این intentها طبقه‌بندی کن و خروجی را فقط به‌صورت JSON معتبر برگردان.
 
