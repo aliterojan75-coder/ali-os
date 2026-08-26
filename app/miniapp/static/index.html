@@ -534,9 +534,15 @@ $('#t-save').onclick=async ()=>{
 
 /* ---------- boot ---------- */
 window.retryBoot = ()=>location.reload();
+let _bootTimer = null;
+let _everFailed = false;
 async function init(){
+  // اگر قبلاً قطع شده بود، نشانگر را به حالت تلاش برگردان
+  if (_everFailed) $('#conn').textContent = 'در حال اتصال…';
   try{
     const me = await api('/api/me');
+    _everFailed = false;
+    if (_bootTimer){ clearTimeout(_bootTimer); _bootTimer = null; }
     $('#uname').textContent = (me.user && (me.user.first_name||me.user.username)) || 'علی';
     $('#model').textContent = `🧠 ${me.model} • نسخه ${me.version}` + ((me.user && me.user._dev)?' • حالت توسعه':'');
     $('#conn').textContent = 'متصل';
@@ -547,6 +553,7 @@ async function init(){
     setInterval(()=>{ if(document.querySelector('#v-overview').classList.contains('active')) loadOverview(); }, 30000);
     setInterval(()=>{ fetch('/health', {credentials:'same-origin'}).catch(()=>{}); }, 4*60*1000);
   }catch(e){
+    _everFailed = true;
     $('#conn').textContent = 'قطع';
     const hint = (e.message==='unauthorized' || e.message==='HTTP 401')
       ? 'اگر Mini App را خارج از تلگرام باز کرده‌ای، باید از داخل تلگرام اجرا شود.'
@@ -555,7 +562,11 @@ async function init(){
         'برای باز شدن پنل، اینترنت دستگاه باید به ali-os.onrender.com دسترسی داشته باشد.';
     document.querySelector('#urgentList').innerHTML =
       `<div class="empty">⚠️ اتصال به سرور برقرار نشد: ${esc(e.message)}<br>${hint}` +
+      `<br>⏱ هر ۲۰ ثانیه به‌صورت خودکار دوباره تلاش می‌شود.` +
       `<br><button class="btn sm" style="margin-top:10px" onclick="retryBoot()">تلاش دوباره</button></div>`;
+    // اتصال مجدد خودکار: وقتی سرور بیدار شد یا اینترنت برگشت، داشبورد خودش وصل می‌شود
+    if (_bootTimer) clearTimeout(_bootTimer);
+    _bootTimer = setTimeout(init, 20000);
   }
 }
 function boot(){
