@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<title>Ali OS — داشبورد</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0b0f1a;
+    --bg-2:#0f1524;
+    --card:#161d2e;
+    --card-2:#1b2336;
+    --line:rgba(255,255,255,.07);
+    --txt:#eef2fb;
+    --muted:#9aa6c0;
+    --brand:#6c8cff;
+    --brand-2:#9b6cff;
+    --accent:#36e2b0;
+    --warn:#ffb454;
+    --danger:#ff6b81;
+    --high:#ff6b81;
+    --urgent:#ff3b6b;
+    --normal:#6c8cff;
+    --low:#36e2b0;
+    --radius:18px;
+    --shadow:0 10px 30px rgba(0,0,0,.35);
+    --tabbar-h:68px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--txt);
+    font-family:'Vazirmatn',system-ui,-apple-system,Segoe UI,Tahoma,sans-serif;
+    font-size:15px;line-height:1.6;overscroll-behavior:none}
+  body{
+    background:
+      radial-gradient(1200px 600px at 110% -10%, rgba(108,140,255,.18), transparent 60%),
+      radial-gradient(900px 500px at -10% 0%, rgba(155,108,255,.15), transparent 55%),
+      linear-gradient(180deg,var(--bg) 0%,var(--bg-2) 100%);
+    min-height:100vh;
+    padding-bottom:calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 16px);
+  }
+  .wrap{max-width:680px;margin:0 auto;padding:14px 14px 0}
+
+  /* Header */
+  header.app{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:10px 6px 14px;position:sticky;top:0;z-index:20;
+    background:linear-gradient(180deg, rgba(11,15,26,.92), rgba(11,15,26,.55) 70%, transparent);
+    backdrop-filter:blur(10px);
+  }
+  .brand{display:flex;align-items:center;gap:10px}
+  .logo{width:40px;height:40px;border-radius:12px;
+    background:linear-gradient(135deg,var(--brand),var(--brand-2));
+    display:grid;place-items:center;font-weight:800;color:white;box-shadow:var(--shadow)}
+  .brand h1{font-size:17px;margin:0;font-weight:700;letter-spacing:.2px}
+  .brand small{display:block;color:var(--muted);font-size:11px;margin-top:1px}
+  .pill{display:inline-flex;align-items:center;gap:6px;background:rgba(54,226,176,.12);
+    color:var(--accent);border:1px solid rgba(54,226,176,.25);
+    padding:5px 10px;border-radius:999px;font-size:11px;font-weight:600}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent)}
+
+  /* Cards */
+  .card{background:linear-gradient(180deg,var(--card),var(--card-2));
+    border:1px solid var(--line);border-radius:var(--radius);padding:16px;
+    box-shadow:var(--shadow);margin:12px 0;animation:fade .35s ease both}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .card h2{margin:0 0 12px;font-size:15px;display:flex;align-items:center;gap:8px}
+  .card h2 .ico{font-size:17px}
+  .muted{color:var(--muted)}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .spacer{height:8px}
+
+  /* Stat grid */
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .stat{background:rgba(255,255,255,.03);border:1px solid var(--line);
+    border-radius:14px;padding:12px;text-align:center}
+  .stat .n{font-size:22px;font-weight:800;background:linear-gradient(135deg,var(--brand),var(--brand-2));
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .stat .l{font-size:11px;color:var(--muted);margin-top:3px}
+
+  .bars{display:flex;flex-direction:column;gap:10px;margin-top:4px}
+  .bar{display:grid;grid-template-columns:90px 1fr 34px;align-items:center;gap:8px;font-size:12px}
+  .bar .track{height:8px;background:rgba(255,255,255,.06);border-radius:99px;overflow:hidden}
+  .bar .fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--brand),var(--brand-2))}
+  .bar .v{text-align:left;color:var(--muted)}
+
+  /* Tabs */
+  nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;
+    background:rgba(13,18,30,.86);backdrop-filter:blur(14px);
+    border-top:1px solid var(--line);
+    padding:8px 8px calc(8px + env(safe-area-inset-bottom));
+    display:grid;grid-template-columns:repeat(5,1fr);gap:4px}
+  nav.tabs button{background:transparent;border:0;color:var(--muted);
+    font-family:inherit;font-size:10.5px;font-weight:600;padding:8px 4px;border-radius:14px;
+    display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;transition:.2s}
+  nav.tabs button .ti{font-size:19px;line-height:1}
+  nav.tabs button.active{color:white;background:linear-gradient(135deg,rgba(108,140,255,.22),rgba(155,108,255,.18))}
+  .view{display:none}.view.active{display:block}
+
+  /* Lists */
+  .list{display:flex;flex-direction:column;gap:8px}
+  .item{background:rgba(255,255,255,.03);border:1px solid var(--line);
+    border-radius:14px;padding:12px 13px;display:flex;flex-direction:column;gap:6px;
+    transition:.15s;cursor:pointer}
+  .item:active{transform:scale(.99)}
+  .item .top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+  .item .t{font-weight:600;font-size:13.5px}
+  .item .meta{font-size:11px;color:var(--muted);display:flex;flex-wrap:wrap;gap:8px}
+  .badge{font-size:10px;font-weight:700;padding:3px 8px;border-radius:99px;white-space:nowrap}
+  .b-high{background:rgba(255,107,129,.15);color:var(--high);border:1px solid rgba(255,107,129,.3)}
+  .b-urgent{background:rgba(255,59,107,.18);color:var(--urgent);border:1px solid rgba(255,59,107,.35)}
+  .b-normal{background:rgba(108,140,255,.15);color:var(--normal);border:1px solid rgba(108,140,255,.3)}
+  .b-low{background:rgba(54,226,176,.12);color:var(--low);border:1px solid rgba(54,226,176,.28)}
+  .b-status{background:rgba(255,255,255,.06);color:var(--muted);border:1px solid var(--line)}
+  .b-proj{background:rgba(155,108,255,.14);color:#c7b3ff;border:1px solid rgba(155,108,255,.3)}
+  .chip{display:inline-block;background:rgba(255,255,255,.05);border:1px solid var(--line);
+    color:var(--muted);font-size:10.5px;padding:3px 9px;border-radius:99px;margin:3px 4px 0 0}
+
+  /* Buttons & forms */
+  .btn{font-family:inherit;border:0;cursor:pointer;border-radius:12px;padding:11px 14px;
+    font-weight:700;font-size:13px;background:linear-gradient(135deg,var(--brand),var(--brand-2));
+    color:white;box-shadow:0 8px 20px rgba(108,140,255,.25);transition:.15s}
+  .btn:active{transform:translateY(1px)}
+  .btn.ghost{background:rgba(255,255,255,.05);color:var(--txt);box-shadow:none;border:1px solid var(--line)}
+  .btn.sm{padding:7px 11px;font-size:11.5px;border-radius:10px}
+  .btn.danger{background:linear-gradient(135deg,#ff6b81,#ff3b6b)}
+  .field{margin:10px 0}
+  .field label{display:block;font-size:11.5px;color:var(--muted);margin-bottom:6px;font-weight:600}
+  input,textarea,select{width:100%;font-family:inherit;font-size:13.5px;color:var(--txt);
+    background:rgba(0,0,0,.25);border:1px solid var(--line);border-radius:12px;
+    padding:11px 12px;outline:none;transition:.15s}
+  input:focus,textarea:focus,select:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(108,140,255,.18)}
+  textarea{min-height:72px;resize:vertical}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+  /* FAB */
+  .fab{position:fixed;right:16px;bottom:calc(var(--tabbar-h) + 16px + env(safe-area-inset-bottom));
+    z-index:25;width:54px;height:54px;border-radius:18px;border:0;cursor:pointer;
+    background:linear-gradient(135deg,var(--accent),#2bc499);color:#06231c;font-size:26px;
+    box-shadow:0 12px 26px rgba(54,226,176,.35);display:grid;place-items:center;font-weight:800}
+
+  /* Sheet */
+  .sheet-back{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40;
+    display:none;align-items:flex-end;justify-content:center}
+  .sheet-back.open{display:flex}
+  .sheet{background:var(--card);border-top:1px solid var(--line);
+    width:100%;max-width:680px;border-radius:22px 22px 0 0;padding:18px 16px 24px;
+    animation:up .28s cubic-bezier(.2,.8,.2,1)}
+  @keyframes up{from{transform:translateY(100%)}to{transform:none}}
+  .sheet h3{margin:0 0 12px;font-size:16px;display:flex;justify-content:space-between;align-items:center}
+  .x{background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--txt);
+    width:30px;height:30px;border-radius:10px;cursor:pointer;font-size:16px}
+
+  .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--tabbar-h) + 80px);
+    background:linear-gradient(135deg,var(--brand),var(--brand-2));color:white;
+    padding:11px 16px;border-radius:12px;font-size:13px;font-weight:600;z-index:60;
+    box-shadow:var(--shadow);opacity:0;transition:.25s;pointer-events:none}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
+
+  .empty{text-align:center;color:var(--muted);padding:28px 10px;font-size:13px}
+  .loader{display:inline-block;width:18px;height:18px;border:2px solid rgba(255,255,255,.2);
+    border-top-color:white;border-radius:50%;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .seg{display:flex;gap:6px;background:rgba(255,255,255,.04);padding:4px;border-radius:12px;border:1px solid var(--line);margin:6px 0 12px;overflow-x:auto}
+  .seg button{flex:0 0 auto;background:transparent;border:0;color:var(--muted);font-family:inherit;
+    font-size:12px;font-weight:600;padding:7px 12px;border-radius:9px;cursor:pointer;white-space:nowrap}
+  .seg button.on{background:linear-gradient(135deg,var(--brand),var(--brand-2));color:white}
+  .ev{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px dashed var(--line)}
+  .ev:last-child{border-bottom:0}
+  .ev .t{font-size:12px;color:var(--muted);min-width:64px}
+  .ev .e{font-size:12.5px}
+  .ev .e b{color:var(--brand)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="app">
+    <div class="brand">
+      <div class="logo">A</div>
+      <div>
+        <h1>Ali OS</h1>
+        <small>Chief of Staff هوش مصنوعی</small>
+      </div>
+    </div>
+    <span class="pill"><span class="dot"></span> <span id="conn">در حال اتصال…</span></span>
+  </header>
+
+  <!-- OVERVIEW -->
+  <section class="view active" id="v-overview">
+    <div class="card">
+      <div class="row">
+        <h2><span class="ico">👋</span> سلام <span id="uname">علی</span></h2>
+        <span class="muted" id="date"></span>
+      </div>
+      <p class="muted" id="model" style="margin:6px 0 0;font-size:12px"></p>
+    </div>
+
+    <div class="card">
+      <h2><span class="ico">📊</span> نگاه کلی</h2>
+      <div class="stats" id="stats"></div>
+      <div class="spacer"></div>
+      <div class="bars" id="projBars"></div>
+    </div>
+
+    <div class="card">
+      <h2><span class="ico">🔥</span> تسک‌های فوری</h2>
+      <div class="list" id="urgentList"><div class="empty"><span class="loader"></span></div></div>
+    </div>
+  </section>
+
+  <!-- TASKS -->
+  <section class="view" id="v-tasks">
+    <div class="card">
+      <h2><span class="ico">✅</span> تسک‌ها</h2>
+      <div class="seg" id="taskSeg">
+        <button class="on" data-f="open">باز</button>
+        <button data-f="high">بالا/فوری</button>
+        <button data-f="done">انجام‌شده</button>
+        <button data-f="all">همه</button>
+      </div>
+      <div class="list" id="taskList"></div>
+    </div>
+  </section>
+
+  <!-- PROJECTS -->
+  <section class="view" id="v-projects">
+    <div class="card">
+      <h2><span class="ico">📂</span> پروژه‌ها</h2>
+      <div class="list" id="projList"></div>
+    </div>
+  </section>
+
+  <!-- MEMORY -->
+  <section class="view" id="v-memory">
+    <div class="card">
+      <h2><span class="ico">🧠</span> حافظه و تصمیم‌ها</h2>
+      <div class="seg" id="memSeg">
+        <button class="on" data-f="dec">تصمیم‌ها</button>
+        <button data-f="mem">حافظه</button>
+      </div>
+      <div class="list" id="memList"></div>
+    </div>
+  </section>
+
+  <!-- LOGS -->
+  <section class="view" id="v-logs">
+    <div class="card">
+      <h2><span class="ico">📡</span> رویدادها (Event Log)</h2>
+      <div class="list" id="logList"></div>
+    </div>
+  </section>
+</div>
+
+<button class="fab" id="fab" title="تسک جدید">＋</button>
+
+<!-- Task sheet -->
+<div class="sheet-back" id="sheetBack">
+  <div class="sheet">
+    <h3>تسک جدید <button class="x" id="sheetClose">×</button></h3>
+    <div class="field">
+      <label>عنوان</label>
+      <input id="t-title" placeholder="مثلاً بررسی Core Web Vitals امداد سرویس قم" />
+    </div>
+    <div class="grid2">
+      <div class="field">
+        <label>پروژه</label>
+        <select id="t-project"><option value="">بدون پروژه</option></select>
+      </div>
+      <div class="field">
+        <label>اولویت</label>
+        <select id="t-priority">
+          <option value="normal">معمولی</option>
+          <option value="low">کم</option>
+          <option value="high">بالا</option>
+          <option value="urgent">فوری</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label>توضیحات</label>
+      <textarea id="t-desc" placeholder="نتیجه مورد انتظار، جزئیات…"></textarea>
+    </div>
+    <div style="display:flex;gap:10px">
+      <button class="btn" id="t-save" style="flex:1">ثبت تسک</button>
+      <button class="btn ghost" id="t-cancel">انصراف</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<nav class="tabs">
+  <button data-v="overview" class="active"><span class="ti">🏠</span>خلاصه</button>
+  <button data-v="tasks"><span class="ti">✅</span>تسک‌ها</button>
+  <button data-v="projects"><span class="ti">📂</span>پروژه‌ها</button>
+  <button data-v="memory"><span class="ti">🧠</span>حافظه</button>
+  <button data-v="logs"><span class="ti">📡</span>لاگ</button>
+</nav>
+
+<script>
+/* ---------- Telegram bridge ---------- */
+const tg = window.Telegram && window.Telegram.WebApp;
+if (tg) {
+  try { tg.ready(); tg.expand(); } catch(e){}
+  document.documentElement.style.setProperty('--bg', (tg.themeParams && tg.themeParams.bg_color) || '#0b0f1a');
+}
+const INIT_DATA = tg ? tg.initData : '';
+
+async function api(path, opts={}){
+  const headers = {'Content-Type':'application/json', ...(opts.headers||{})};
+  if (INIT_DATA) headers['X-Telegram-Init-Data'] = INIT_DATA;
+  let lastErr;
+  // Auto-retry with backoff — the backend may be cold-starting on free hosting.
+  for (let attempt=0; attempt<4; attempt++){
+    try{
+      const ctrl = new AbortController();
+      const t = setTimeout(()=>ctrl.abort(), 20000 + attempt*5000);
+      const r = await fetch(path, {...opts, headers, credentials:'same-origin', signal:ctrl.signal});
+      clearTimeout(t);
+      let data = {};
+      try { data = await r.json(); } catch(e){}
+      if (r.status===502 || r.status===503 || r.status===504 || r.status===0){
+        lastErr = new Error('سرور در حال بیدار شدن است… (تلاش '+(attempt+1)+')');
+        await new Promise(res=>setTimeout(res, 1200*(attempt+1)));
+        continue;
+      }
+      if (!r.ok) throw new Error(data.error || ('HTTP '+r.status));
+      return data;
+    }catch(e){
+      lastErr = e;
+      if (e.name==='AbortError') { await new Promise(res=>setTimeout(res,1000)); continue; }
+      // Network error (e.g. tunnel briefly down) — retry
+      await new Promise(res=>setTimeout(res, 1200*(attempt+1)));
+    }
+  }
+  throw lastErr || new Error('خطای شبکه');
+}
+
+/* ---------- helpers ---------- */
+const $ = s => document.querySelector(s);
+const esc = s => (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'),2200); }
+function fmtDate(ts){ try{ return new Date(ts*1000).toLocaleDateString('fa-IR',{month:'short',day:'numeric'}); }catch(e){ return ''; } }
+function pBadge(p){ return p ? `<span class="badge b-proj">${esc(p)}</span>` : ''; }
+function prBadge(p){ return `<span class="badge b-${p||'normal'}">${({urgent:'فوری',high:'بالا',normal:'معمولی',low:'کم'})[p]||p}</span>`; }
+function stBadge(s){
+  const map={inbox:'صندوق',planned:'برنامه‌ریزی',in_progress:'در حال انجام',blocked:'مسدود',waiting_approval:'در انتظار تأیید',done:'انجام‌شد',cancelled:'لغو'};
+  return `<span class="badge b-status">${map[s]||s}</span>`;
+}
+async function loadProjects(){
+  const d = await api('/api/projects');
+  window._projects = d.projects;
+  const sel = $('#t-project');
+  sel.innerHTML = '<option value="">بدون پروژه</option>' +
+    d.projects.map(p=>`<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('');
+  return d.projects;
+}
+
+/* ---------- rendering ---------- */
+async function loadOverview(){
+  const [s] = await Promise.all([api('/api/stats')]);
+  const st = s.stats;
+  $('#stats').innerHTML = `
+    <div class="stat"><div class="n">${st.open_tasks}</div><div class="l">تسک باز</div></div>
+    <div class="stat"><div class="n">${st.active_projects}</div><div class="l">پروژه فعال</div></div>
+    <div class="stat"><div class="n">${st.decisions}</div><div class="l">تصمیم</div></div>
+    <div class="stat"><div class="n">${st.memories}</div><div class="l">حافظه</div></div>
+    <div class="stat"><div class="n">${st.events}</div><div class="l">رویداد</div></div>
+    <div class="stat"><div class="n">${st.done_tasks}</div><div class="l">انجام‌شده</div></div>`;
+  const max = Math.max(1, ...st.by_project.map(p=>p.open_count));
+  $('#projBars').innerHTML = st.by_project.map(p=>`
+    <div class="bar">
+      <div class="muted" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name)}</div>
+      <div class="track"><div class="fill" style="width:${Math.round(p.open_count/max*100)}%"></div></div>
+      <div class="v">${p.open_count}</div>
+    </div>`).join('') || '<div class="muted" style="font-size:12px">تسک بازی وجود ندارد.</div>';
+
+  const t = await api('/api/tasks?limit=8');
+  const urgent = t.tasks.filter(x=>x.priority==='urgent'||x.priority==='high');
+  $('#urgentList').innerHTML = urgent.length ? urgent.map(taskItem).join('')
+    : '<div class="empty">تسک فوری‌ای وجود ندارد. عالی! 🎉</div>';
+}
+
+function taskItem(x){
+  return `<div class="item" data-uid="${esc(x.task_uid)}">
+    <div class="top">
+      <div class="t">${esc(x.title)}</div>
+      <div style="display:flex;gap:6px;flex-shrink:0">${prBadge(x.priority)}${stBadge(x.status)}</div>
+    </div>
+    <div class="meta">${pBadge(x.project_name)}
+      ${x.description?`<span>${esc(x.description.slice(0,80))}${x.description.length>80?'…':''}</span>`:''}
+      <span>#${esc(x.task_uid)}</span>
+    </div>
+    <div class="meta" style="justify-content:flex-end;gap:6px">
+      ${x.status!=='done'?`<button class="btn sm ghost" onclick="doneTask('${esc(x.task_uid)}')">انجام شد</button>`:''}
+    </div>
+  </div>`;
+}
+window.doneTask = async (uid)=>{
+  await api('/api/tasks/'+uid+'/status',{method:'POST',body:JSON.stringify({status:'done'})});
+  toast('✅ انجام شد'); loadTasks(currentTaskFilter); loadOverview();
+};
+
+let currentTaskFilter='open';
+async function loadTasks(f){
+  currentTaskFilter=f||'open';
+  document.querySelectorAll('#taskSeg button').forEach(b=>b.classList.toggle('on', b.dataset.f===currentTaskFilter));
+  let url='/api/tasks?limit=60';
+  if(currentTaskFilter==='done') url+='&status=done';
+  if(currentTaskFilter==='high') url+='&status=inbox'; // fallback, filter below
+  const d = await api(url);
+  let tasks = d.tasks;
+  if(currentTaskFilter==='high') tasks = tasks.filter(x=>x.priority==='high'||x.priority==='urgent');
+  if(currentTaskFilter==='open') tasks = tasks.filter(x=>x.status!=='done'&&x.status!=='cancelled');
+  $('#taskList').innerHTML = tasks.length ? tasks.map(taskItem).join('') : '<div class="empty">چیزی برای نمایش نیست.</div>';
+}
+
+async function loadProjectView(){
+  const ps = window._projects || await loadProjects();
+  const counts = {};
+  (await api('/api/tasks?limit=200')).tasks.forEach(t=>{
+    if(t.status!=='done'&&t.status!=='cancelled') counts[t.project_slug||'_']=(counts[t.project_slug||'_']||0)+1;
+  });
+  $('#projList').innerHTML = ps.map(p=>{
+    let meta={}; try{meta=p.metadata||{};}catch(e){}
+    const chips = [p.domain,p.industry].filter(Boolean).map(c=>`<span class="chip">${esc(c)}</span>`).join('');
+    const products = (meta.products||[]).slice(0,6).map(c=>`<span class="chip">${esc(c)}</span>`).join('');
+    return `<div class="item">
+      <div class="top">
+        <div class="t">${esc(p.name)}</div>
+        <span class="badge b-proj">${counts[p.slug]||0} تسک باز</span>
+      </div>
+      <div class="meta">${esc((p.notes||'').slice(0,140))}${(p.notes||'').length>140?'…':''}</div>
+      <div>${chips}${products}</div>
+    </div>`;
+  }).join('');
+}
+
+let currentMem='dec';
+async function loadMemory(){
+  document.querySelectorAll('#memSeg button').forEach(b=>b.classList.toggle('on', b.dataset.f===currentMem));
+  let html='';
+  if(currentMem==='dec'){
+    const d = await api('/api/decisions');
+    html = d.decisions.length ? d.decisions.map(x=>`<div class="item">
+      <div class="top"><div class="t">${esc(x.problem)}</div>${pBadge(x.project_name)}</div>
+      ${x.decision?`<div class="meta"><b>تصمیم:</b> ${esc(x.decision)}</div>`:''}
+      ${x.reason?`<div class="meta">${esc(x.reason)}</div>`:''}
+      <div class="meta">${fmtDate(x.created_at)}</div>
+    </div>`).join('') : '<div class="empty">هنوز تصمیمی ثبت نشده.</div>';
+  } else {
+    const d = await api('/api/memories');
+    html = d.memories.length ? d.memories.map(x=>`<div class="item">
+      <div class="top"><div class="t">${esc(x.content)}</div><span class="badge b-status">${esc(x.memory_type)}</span></div>
+      <div class="meta">scope: ${esc(x.scope)} • اطمینان: ${Math.round((x.confidence||0)*100)}% • ${esc(x.source||'')}</div>
+    </div>`).join('') : '<div class="empty">حافظه‌ای ثبت نشده.</div>';
+  }
+  $('#memList').innerHTML = html;
+}
+
+async function loadLogs(){
+  const d = await api('/api/events?limit=40');
+  $('#logList').innerHTML = d.events.length ? d.events.map(e=>{
+    let p={}; try{p=JSON.parse(e.payload_json||'{}')}catch(_){}
+    const summary = Object.entries(p).map(([k,v])=>`${esc(k)}: <b>${esc(typeof v==='object'?JSON.stringify(v):String(v))}</b>`).join(' • ');
+    return `<div class="ev"><div class="t">${fmtDate(e.created_at)}</div>
+      <div class="e"><b>${esc(e.event_type)}</b><br>${summary||'—'}</div></div>`;
+  }).join('') : '<div class="empty">رویدادی نیست.</div>';
+}
+
+/* ---------- navigation ---------- */
+document.querySelectorAll('nav.tabs button').forEach(b=>{
+  b.onclick = ()=>{
+    document.querySelectorAll('nav.tabs button').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    const v = b.dataset.v;
+    $('#v-'+v).classList.add('active');
+    if(v==='overview') loadOverview();
+    if(v==='tasks') loadTasks('open');
+    if(v==='projects') loadProjectView();
+    if(v==='memory') loadMemory();
+    if(v==='logs') loadLogs();
+  };
+});
+
+/* task filter */
+document.querySelectorAll('#taskSeg button').forEach(b=> b.onclick=()=>loadTasks(b.dataset.f));
+document.querySelectorAll('#memSeg button').forEach(b=> b.onclick=()=>{currentMem=b.dataset.f; loadMemory();});
+
+/* ---------- new task sheet ---------- */
+const sheet=$('#sheetBack');
+function openSheet(){ sheet.classList.add('open'); $('#t-title').focus(); }
+function closeSheet(){ sheet.classList.remove('open'); $('#t-title').value=''; $('#t-desc').value=''; }
+$('#fab').onclick=openSheet;
+$('#sheetClose').onclick=closeSheet;
+$('#t-cancel').onclick=closeSheet;
+sheet.onclick=e=>{ if(e.target===sheet) closeSheet(); };
+$('#t-save').onclick=async ()=>{
+  const title=$('#t-title').value.trim();
+  if(!title){ toast('عنوان لازم است'); return; }
+  $('#t-save').disabled=true;
+  try{
+    await api('/api/tasks',{method:'POST',body:JSON.stringify({
+      title, project_slug:$('#t-project').value||null,
+      priority:$('#t-priority').value, description:$('#t-desc').value||null
+    })});
+    closeSheet(); toast('✅ تسک ثبت شد');
+    loadOverview(); loadTasks(currentTaskFilter); loadProjectView();
+  }catch(e){ toast('خطا: '+e.message); }
+  finally{ $('#t-save').disabled=false; }
+};
+
+/* ---------- boot ---------- */
+(async function init(){
+  try{
+    const me = await api('/api/me');
+    $('#uname').textContent = (me.user && (me.user.first_name||me.user.username)) || 'علی';
+    $('#model').textContent = `🧠 ${me.model} • نسخه ${me.version}` + (me.user._dev?' • حالت توسعه':'');
+    $('#conn').textContent = 'متصل';
+    $('#date').textContent = new Date().toLocaleDateString('fa-IR',{weekday:'short',day:'numeric',month:'long'});
+    await loadProjects();
+    await Promise.all([loadOverview(), loadTasks('open')]);
+    // background refresh
+    setInterval(()=>{ if(document.querySelector('#v-overview').classList.contains('active')) loadOverview(); }, 30000);
+  }catch(e){
+    $('#conn').textContent = 'قطع';
+    document.querySelector('#urgentList').innerHTML =
+      `<div class="empty">⚠️ اتصال به سرور برقرار نشد: ${esc(e.message)}<br>اگر Mini App را خارج از تلگرام باز کرده‌ای، باید از داخل تلگرام اجرا شود.</div>`;
+  }
+})();
+</script>
+</body>
+</html>

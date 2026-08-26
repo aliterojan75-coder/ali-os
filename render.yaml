@@ -1,0 +1,45 @@
+# Render deployment blueprint for Ali OS (free tier, no credit card required).
+#
+# How to use:
+#   1. Push this repo to GitHub.
+#   2. In Render: New + → Blueprint → connect the repo.
+#   3. Render reads this file and prompts for the secret env vars
+#      (marked sync:false): TELEGRAM_BOT_TOKEN, WEBHOOK_SECRET, LLM_API_KEY,
+#      TURSO_DATABASE_URL, TURSO_AUTH_TOKEN.
+#
+# The free web service spins down after ~15 min of inactivity and wakes on the
+# next request (cold start ~20-40s). The Mini App retries automatically.
+
+services:
+  - type: web
+    name: ali-os
+    runtime: python
+    plan: free
+    region: frankfurt
+    branch: main
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120 --access-logfile - --error-logfile -"
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: AUTO_SET_WEBHOOK
+        value: "1"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LLM_BASE_URL
+        value: https://inference.dahl.global/v1
+      - key: LLM_MODEL
+        value: MiniMaxAI/MiniMax-M2.7
+      # PUBLIC_URL is optional on Render: RENDER_EXTERNAL_URL is used automatically.
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: WEBHOOK_SECRET
+        sync: false
+      - key: LLM_API_KEY
+        sync: false
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false

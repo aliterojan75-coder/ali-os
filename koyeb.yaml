@@ -1,0 +1,28 @@
+# Koyeb deployment (free instance, no sleep, no credit card usually).
+# Deploy via:
+#   koyeb app init ali-os --docker ./ --ports 8080:http --routes /:8080 \
+#     --env PORT=8080 --env TELEGRAM_BOT_TOKEN=... --env ...
+# Or via the Koyeb dashboard using this repository + Dockerfile builder.
+name: ali-os
+services:
+  - name: ali-os-web
+    instance_type: free
+    docker:
+      image: .
+    ports:
+      - port: 8080
+        protocol: http
+    routes:
+      - path: /
+        port: 8080
+    health_check:
+      http:
+        path: /health
+    env:
+      - name: PORT
+        value: "8080"
+      - name: AUTO_SET_WEBHOOK
+        value: "1"
+    scaling:
+      min_scale: 0
+      max_scale: 1
