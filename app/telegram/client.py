@@ -5,6 +5,7 @@ stateless and avoid event-loop / polling conflicts (§20, §49).
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import requests
@@ -50,11 +51,12 @@ def send_message(
     chat_id: int,
     text: str,
     *,
-    parse_mode: str | None = None,  # None: send as plain text (LLM outputs markdown-ish)
+    parse_mode: str | None = "Markdown",  # render **bold**/italic (LLM uses markdown)
     reply_to_message_id: int | None = None,
 ) -> dict[str, Any]:
-    # Telegram has a 4096-char limit; chunk if needed.
-    chunks = _chunk(text, 3800)
+    # Telegram has a 4096-char limit; chunk if needed. Keep < 4000 so we never
+    # split mid-markdown or hit the cap.
+    chunks = _chunk(text, 3900)
     result: dict[str, Any] = {}
     for i, chunk in enumerate(chunks):
         payload: dict[str, Any] = {
@@ -66,8 +68,32 @@ def send_message(
             payload["parse_mode"] = parse_mode
         if i == 0 and reply_to_message_id:
             payload["reply_to_message_id"] = reply_to_message_id
-        result = _call("sendMessage", payload)
+        try:
+            result = _call("sendMessage", payload)
+        except TelegramError:
+            # Telegram can reject Markdown if the LLM produced a stray `_`, `*`
+            # or unbalanced entity. Fall back to plain text (strip markers).
+            fallback = dict(payload)
+            fallback.pop("parse_mode", None)
+            fallback["text"] = strip_markdown(chunk)
+            result = _call("sendMessage", fallback)
     return result
+
+
+def strip_markdown(text: str) -> str:
+    """Remove Markdown emphasis tokens so the message renders as plain text.
+
+    Keeps the content (and emojis); only strips the `**`, `*`, `__`, `_`, `##`
+    markers that would otherwise be sent literally when parse_mode is off.
+    """
+    t = text
+    t = re.sub(r"\*\*(.+?)\*\*", r"\1", t)   # **bold**
+    t = re.sub(r"__(.+?)__", r"\1", t)       # __bold__
+    t = re.sub(r"(?<![\w*])\*(?!\*)(.+?)\*(?!\*)", r"\1", t)  # *italic*
+    t = re.sub(r"(?<![\w_])\b_(?!_)(.+?)_(?![_w])", r"\1", t)  # _italic_
+    t = re.sub(r"(?m)^#{1,6}\s*", "", t)     # ## headings
+    t = re.sub(r"`(.+?)`", r"\1", t)         # `code`
+    return t
 
 
 def _chunk(text: str, size: int) -> list[str]:
@@ -76,10 +102,15 @@ def _chunk(text: str, size: int) -> list[str]:
     parts, start = [], 0
     while start < len(text):
         end = min(start + size, len(text))
-        # try to break on newline
+        # try to break on newline (keeps sentences intact)
         nl = text.rfind("\n", start, end)
         if nl > start:
             end = nl
+        # never break inside a **...** pair
+        part = text[start:end]
+        if part.count("**") % 2 != 0:
+            # find the nearest newline before the end so a bold pair stays whole
+            end = text.rfind("\n", start, end - 1) or end
         parts.append(text[start:end].strip())
         start = end
     return [p for p in parts if p]
