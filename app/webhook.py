@@ -18,6 +18,7 @@ from app.master.agent import IncomingMessage
 from app.miniapp.api import api as api_bp
 from app.miniapp.routes import spa as spa_bp
 from app.telegram import parse_update, send_message, set_webhook
+from app.tools.set_menu import set_menu_button
 
 log = get_logger("webhook")
 
@@ -40,6 +41,13 @@ def create_app() -> Flask:
             set_webhook(config.webhook_url(), config.WEBHOOK_SECRET)
         except Exception as exc:  # noqa: BLE001
             log.warning("webhook.set_failed", extra={"extra_fields": {"error": str(exc)}})
+
+        # Also wire the Telegram menu button → Mini App (web_app), so the
+        # dashboard is reachable from the chat. Best-effort; never block boot.
+        try:
+            set_menu_button()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("telegram.set_menu_failed", extra={"extra_fields": {"error": str(exc)}})
 
     @app.get("/health")
     def health():
