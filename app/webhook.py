@@ -30,6 +30,9 @@ log = get_logger("webhook")
 
 master = MasterAgent()
 
+# P0: per-chat cooldown for the polite "not the owner" decline (spam guard).
+_DECLINED_AT: dict[int, float] = {}
+
 
 def create_app() -> Flask:
     # static_folder=None disables Flask's built-in /static route, which would
@@ -122,6 +125,16 @@ def create_app() -> Flask:
         # ── Inline button press on an approval card (§19) ──────────────────
         cb = parse_callback_query(update)
         if cb:
+            # P0: approval buttons are owner-only too (cards always land in the
+            # owner's chat; the gateway separately binds decisions to requester).
+            _admins = config.admin_chat_ids()
+            if _admins and cb.get("chat_id") not in _admins:
+                if cb.get("callback_query_id"):
+                    try:
+                        answer_callback_query(cb["callback_query_id"], "شما مجاز به تأیید نیستید.")
+                    except Exception:  # noqa: BLE001
+                        pass
+                return jsonify({"ok": True, "ignored": "not_owner"})
             log_event(
                 log, "webhook.callback",
                 user_id=cb.get("user_id"),
@@ -145,6 +158,41 @@ def create_app() -> Flask:
         parsed = parse_update(update)
         if not parsed or not parsed.get("user_id") or not parsed.get("text"):
             return jsonify({"ok": True, "ignored": True})
+
+        # ── P0 security: ownership gate ─────────────────────────────────────
+        # The webhook secret proves the update comes from Telegram, NOT that the
+        # sender is Ali. Without this gate, any stranger who finds the bot could
+        # read /dossier /crm /finance. Unknown chats get one polite decline/hour.
+        # /whoami stays open so the owner can discover their chat id to configure
+        # TELEGRAM_ADMIN_CHAT_ID (chicken-and-egg).
+        admins = config.admin_chat_ids()
+        text = parsed["text"].strip()
+        if text.split()[0].lower().startswith("/whoami"):
+            try:
+                send_message(
+                    chat_id=parsed["chat_id"],
+                    text=f"🆔 chat_id شما: `{parsed['chat_id']}`\n\n"
+                         "این عدد را در env سرور به‌عنوان TELEGRAM_ADMIN_CHAT_ID ثبت کنید.",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            return jsonify({"ok": True, "whoami": True})
+
+        if admins and parsed.get("chat_id") not in admins:
+            log_event(
+                log, "webhook.rejected",
+                user_id=parsed["user_id"],
+                payload={"chat_id": parsed["chat_id"], "text": text[:60]},
+            )
+            import time as _time
+            now = _time.time()
+            if now - _DECLINED_AT.get(parsed["chat_id"], 0) > 3600:
+                _DECLINED_AT[parsed["chat_id"]] = now
+                try:
+                    send_message(chat_id=parsed["chat_id"], text="این بات شخصی است و فقط به مالکش پاسخ می‌دهد. 🤖")
+                except Exception:  # noqa: BLE001
+                    pass
+            return jsonify({"ok": True, "ignored": "not_owner"})
 
         log_event(
             log, "webhook.received",
@@ -177,6 +225,57 @@ def create_app() -> Flask:
             log.exception("webhook.send_failed", extra={"extra_fields": {"error": str(exc)}})
 
         return jsonify({"ok": True})
+
+    # ── Speed: gzip text responses ──────────────────────────────────────────
+    # The Mini App is a ~170 KB inline SPA served by Flask; Render's free plan
+    # does not compress origin responses. gzip cuts HTML/JSON transfer ~5x —
+    # the difference between a crawling and an instant panel on slow links.
+    import gzip as _gzip
+
+    COMPRESSIBLE = ("text/", "application/json", "javascript", "image/svg+xml")
+
+    @app.after_request
+    def _compress_response(resp):
+        try:
+            accept_enc = request.headers.get("Accept-Encoding", "")
+            if (
+                "gzip" not in accept_enc.lower()
+                or resp.status_code != 200
+                or "Content-Encoding" in resp.headers
+            ):
+                return resp
+            ctype = resp.headers.get("Content-Type", "")
+            if not any(t in ctype for t in COMPRESSIBLE):
+                return resp
+            if resp.direct_passthrough:
+                # send_from_directory responses stream the file; materialize it
+                # once so we can compress (Werkzeug forbids get_data in this mode).
+                body = b"".join(resp.response)
+            else:
+                body = resp.get_data()
+            if not (860 <= len(body) <= 2_000_000):
+                return resp
+            if resp.direct_passthrough:
+                resp = app.response_class(body, status=resp.status_code, headers=resp.headers)
+            compressed = _gzip.compress(body, 6)
+            if len(compressed) >= len(body) * 0.9:
+                return resp
+            resp.set_data(compressed)
+            resp.headers["Content-Encoding"] = "gzip"
+            resp.headers["Content-Length"] = str(len(compressed))
+            resp.headers["Vary"] = "Accept-Encoding"
+            # NB: Cache-Control is left untouched — the SPA route deliberately
+            # sends no-store so Telegram's webview never shows a stale panel.
+        except Exception as exc:  # noqa: BLE001 — compression must never break a response
+            log.debug("compress.skip", extra={"extra_fields": {"error": f"{type(exc).__name__}: {exc}"}})
+        return resp
+
+    # P0: loud reminder when the ownership gate is not configured yet.
+    if not config.admin_chat_ids():
+        log.warning(
+            "security.no_owner_gate",
+            extra={"extra_fields": {"hint": "TELEGRAM_ADMIN_CHAT_ID unset — bot replies to ANYONE"}},
+        )
 
     return app
 
