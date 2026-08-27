@@ -72,6 +72,8 @@ class MasterAgent:
             return {"intent": "list_tasks", "confidence": 0.95, "project_slug": None}
         if low in ("/approvals", "تأییدها", "تاییدها", "approvals", "صف تأیید"):
             return {"intent": "list_approvals", "confidence": 0.99, "project_slug": None}
+        if low in ("/connections", "/connect", "اتصال‌ها", "اتصالها", "connections"):
+            return {"intent": "list_connections", "confidence": 0.99, "project_slug": None}
         if low.startswith("/dossier") or low.startswith("پرونده"):
             rest = text.strip().split(maxsplit=1)
             return {
@@ -105,6 +107,8 @@ class MasterAgent:
             return self._action_create_task(route, project, user_id, msg.chat_id)
         if intent == "list_approvals":
             return self._action_list_approvals(user_id)
+        if intent == "list_connections":
+            return self._action_list_connections()
         if intent == "project_dossier":
             if not project:
                 return "کدوم پروژه؟ مثلاً: «پرونده گیاهکده» یا `/dossier giahkade`."
@@ -194,6 +198,54 @@ class MasterAgent:
                 step = f" (تأیید {a['approvals_count']}/{a['approvals_required']})"
             lines.append(f"{emoji} {proj}{a['title']}{step}\n     `{a['action_uid']}`")
         lines.append("\nروی دکمه‌های همان کارت در چت [✅ تأیید] یا [❌ لغو] را بزن.")
+        return "\n".join(lines)
+
+    # ── Integrations (§20) ─────────────────────────────────────────────────
+    def _action_list_connections(self) -> str:
+        from app.integrations import catalog, crypto, store
+
+        rows = store.list_all()
+        views = [store.public_view(r) for r in rows]
+        by_service: dict[str, list] = {}
+        for v in views:
+            by_service.setdefault(v["service"], []).append(v)
+
+        lines = ["🔌 *اتصال‌های Ali OS*"]
+        if not crypto.is_configured():
+            lines.append("\n⚠️ `ENCRYPTION_KEY` روی سرور تنظیم نشده — تا تنظیم نشود، "
+                         "ذخیره‌ی اطلاعات محرمانه انجام نمی‌شود.")
+
+        connected = [v for v in views if v["status"] == "connected"]
+        errored = [v for v in views if v["status"] == "error"]
+
+        if connected:
+            lines.append("\n✅ *متصل*")
+            for v in connected:
+                scope = v["project_name"] or "عمومی"
+                lines.append(f"   • {v['icon']} {v['service_name']} — {scope}")
+        if errored:
+            lines.append("\n⚠️ *دارای خطا*")
+            for v in errored:
+                scope = v["project_name"] or "عمومی"
+                lines.append(f"   • {v['icon']} {v['service_name']} — {scope}")
+                if v["last_error"]:
+                    lines.append(f"       {v['last_error']}")
+
+        available = [s for s in catalog.SERVICES
+                     if s.available and s.slug not in by_service]
+        if available:
+            lines.append("\n➕ *آماده‌ی اتصال*")
+            for svc in available:
+                lines.append(f"   • {svc.icon} {svc.name}")
+
+        blocked = [s for s in catalog.SERVICES if not s.available]
+        if blocked:
+            lines.append("\n🔒 *فعلاً در دسترس نیست*")
+            for svc in blocked:
+                lines.append(f"   • {svc.icon} {svc.name} — {svc.blocked_reason}")
+
+        lines.append("\nبرای وصل کردن، داشبورد را باز کن → تب «اتصال‌ها». "
+                     "اطلاعات محرمانه رمزنگاری‌شده ذخیره می‌شوند.")
         return "\n".join(lines)
 
     # ── Full project dossier (§2) ──────────────────────────────────────────
@@ -399,7 +451,8 @@ class MasterAgent:
             "• وضعیت پروژه: «وضعیت گیاهکده رو بگو»\n"
             "• آخرین تصمیم‌ها: «آخرین تصمیم درباره CropExport چی بود؟»\n"
             "• پرونده کامل پروژه: «پرونده گیاهکده» یا /dossier giahkade\n"
-            "• صف تأیید: /approvals — اقدامات 🟡/🔴 با دکمه [✅ تأیید] [❌ لغو] در همین چت\n\n"
+            "• صف تأیید: /approvals — اقدامات 🟡/🔴 با دکمه [✅ تأیید] [❌ لغو] در همین چت\n"
+            "• اتصال‌ها: /connections — وردپرس، کانال تلگرام، ایمیل، گوگل…\n\n"
             "🔐 سیستم تأیید سه‌سطحی فعال است: 🟢 مستقیم اجرا می‌شود، "
             "🟡 یک تأیید و 🔴 دو تأیید از تو می‌گیرد.\n\n"
             "پروژه‌های فعلی: Net Nova، گیاهکده، E-Ferdowsi، امداد سرویس قم، CropExport، آبادگران، Sir-Siah.\n\n"

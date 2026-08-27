@@ -34,6 +34,7 @@ BOT_COMMANDS = [
     {"command": "tasks", "description": "Taskهای باز"},
     {"command": "approvals", "description": "صف تأیید (اقدامات در انتظار)"},
     {"command": "dossier", "description": "پرونده کامل پروژه — /dossier giahkade"},
+    {"command": "connections", "description": "اتصال‌ها (وردپرس، گوگل، تلگرام…)"},
 ]
 
 

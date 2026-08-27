@@ -259,6 +259,26 @@ CREATE TABLE IF NOT EXISTS project_people (
     updated_at      REAL NOT NULL
 );
 
+-- ─── Phase 2: Integrations / secret management (§20) ───────────────────────
+-- credentials_json is Fernet-encrypted at rest; the key lives only in env.
+CREATE TABLE IF NOT EXISTS integrations (
+    id              INTEGER PRIMARY KEY,
+    project_id      INTEGER REFERENCES projects(id),
+    service         TEXT NOT NULL,
+    label           TEXT,
+    credentials_enc TEXT,
+    public_json     TEXT DEFAULT '{}',
+    status          TEXT DEFAULT 'pending',  -- pending | connected | error | disabled
+    last_error      TEXT,
+    last_checked_at REAL,
+    created_by      INTEGER,
+    created_at      REAL NOT NULL,
+    updated_at      REAL NOT NULL,
+    UNIQUE (project_id, service)
+);
+
+CREATE INDEX IF NOT EXISTS idx_integrations_project ON integrations(project_id);
+CREATE INDEX IF NOT EXISTS idx_integrations_service ON integrations(service);
 CREATE INDEX IF NOT EXISTS idx_pending_status ON pending_actions(status);
 CREATE INDEX IF NOT EXISTS idx_pending_user ON pending_actions(requested_by);
 CREATE INDEX IF NOT EXISTS idx_kpis_project ON project_kpis(project_id);

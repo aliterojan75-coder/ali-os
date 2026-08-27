@@ -33,7 +33,15 @@ Telegram → Webhook → Flask/Gunicorn → Master Agent → LLM + Memory + Task
 - ✅ **پرونده‌ی کامل پروژه (§2)** — KPI، بودجه، افراد + Task/تصمیم/حافظه/تأییدهای باز
   - دستور `/dossier <پروژه>` یا «پرونده گیاهکده»
   - `GET /api/projects/<slug>/dossier`
-- ⬜ CRM پایه، WordPress Agent، PM Agent، جدول `integrations`
+- ✅ **اتصال‌ها / مدیریت Secret (§20)** — ورودی‌ها را از داخل خود اپ می‌گیرد
+  - تب «🔌 اتصال‌ها» در داشبورد: فرم‌ها از روی کاتالوگ سرویس‌ها خودکار ساخته می‌شوند
+  - رمزنگاری Fernet روی credentialها؛ API فقط مقدار ماسک‌شده برمی‌گرداند
+  - **تست زنده‌ی اتصال** بلافاصله بعد از ذخیره (وردپرس، کانال تلگرام، SMTP، OAuth گوگل)
+  - سرویس‌های مسدود (Google Ads/GBP/Instagram) با دلیل روشن نمایش داده می‌شوند
+  - دستور `/connections` + 📖 [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md)
+- ✅ **WordPress Agent (§3)** — پیش‌نویس/ویرایش 🟡، انتشار/حذف 🔴، فیلدهای Rank Math،
+  و `content_index()` برای جلوگیری از Cannibalization
+- ⬜ CRM پایه، PM Agent، Content Agent
 
 ## دستورات تلگرام
 | دستور | کار |
@@ -42,13 +50,14 @@ Telegram → Webhook → Flask/Gunicorn → Master Agent → LLM + Memory + Task
 | `/tasks` یا «کارها» | Taskهای باز |
 | `/approvals` | صف اقدامات در انتظار تأیید |
 | `/dossier <پروژه>` | پرونده‌ی کامل پروژه |
+| `/connections` | وضعیت اتصال‌ها (وردپرس، گوگل، تلگرام…) |
 
 بقیه‌ی تعامل زبان طبیعی است؛ Intent Router خودش تشخیص می‌دهد.
 
 ## تست
 
 ```bash
-python -m pytest tests -q      # ۲۴ تست — بدون شبکه، بدون تلگرام واقعی
+python -m pytest tests -q      # ۵۲ تست — بدون شبکه، بدون تلگرام واقعی
 ```
 
 ## پنل مدیریت (Mini App)
@@ -57,6 +66,7 @@ python -m pytest tests -q      # ۲۴ تست — بدون شبکه، بدون ت
 - ابزارها:
   - `python -m app.tools.set_webhook`
   - `python -m app.tools.set_menu` (دکمه منوی Mini App + ثبت دستورات `/`)
+  - `python -m app.tools.gen_key` (ساخت `ENCRYPTION_KEY` برای اتصال‌ها — یک‌بار)
 
 ## اجرا
 

@@ -5,7 +5,7 @@
 #   2. In Render: New + → Blueprint → connect the repo.
 #   3. Render reads this file and prompts for the secret env vars
 #      (marked sync:false): TELEGRAM_BOT_TOKEN, WEBHOOK_SECRET, LLM_API_KEY,
-#      TURSO_DATABASE_URL, TURSO_AUTH_TOKEN.
+#      TURSO_DATABASE_URL, TURSO_AUTH_TOKEN, ENCRYPTION_KEY.
 #
 # The free web service spins down after ~15 min of inactivity and wakes on the
 # next request (cold start ~20-40s). The Mini App retries automatically.
@@ -42,4 +42,8 @@ services:
       - key: TURSO_DATABASE_URL
         sync: false
       - key: TURSO_AUTH_TOKEN
+        sync: false
+      # Encrypts integration credentials (WordPress, Google, SMTP…) at rest.
+      # Generate once with: python -m app.tools.gen_key
+      - key: ENCRYPTION_KEY
         sync: false

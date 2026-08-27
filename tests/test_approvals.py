@@ -27,6 +27,16 @@ import app.approvals.actions  # noqa: F401,E402  (registers executors)
 
 
 @pytest.fixture(autouse=True)
+def isolate_registry():
+    """The executor registry is process-global; tests that register stub
+    executors must not leak them into other test modules."""
+    snapshot = dict(registry._REGISTRY)
+    yield
+    registry._REGISTRY.clear()
+    registry._REGISTRY.update(snapshot)
+
+
+@pytest.fixture(autouse=True)
 def fresh_db(monkeypatch):
     path = os.path.join(tempfile.mkdtemp(), f"t_{uuid.uuid4().hex}.db")
     from app.config import config

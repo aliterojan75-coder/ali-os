@@ -4,6 +4,7 @@ Importing this package registers the built-in executors, so any module that
 does `from app.approvals import request_action` gets a fully wired gateway.
 """
 from app.approvals import actions  # noqa: F401  (side effect: registers executors)
+from app import agents  # noqa: F401  (side effect: registers agent executors)
 from app.approvals.gateway import (  # noqa: F401
     ActionResult,
     DecisionError,

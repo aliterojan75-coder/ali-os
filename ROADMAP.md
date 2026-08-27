@@ -32,8 +32,30 @@
 
 **تست:** `python -m pytest tests -q` → ۲۴ تست سبز (بدون شبکه).
 
-> قدم بعدی فاز ۲: CRM پایه + WordPress Agent (با اکشن‌های 🔴 `wordpress.publish` که
-> همین حالا در جدول ریسک هست و فقط اجراکننده‌اش را می‌خواهد) + PM Agent + جدول `integrations`.
+### ✅ قدم ۲ فاز ۲ — انجام شد
+
+**اتصال‌ها و مدیریت Secret (§20)** — ورودی‌های لازم از داخل خود اپ گرفته می‌شود:
+- جدول `integrations` (project_id، سرویس، credentials رمزنگاری‌شده با Fernet، وضعیت)
+- `app/integrations/catalog.py` — کاتالوگ سرویس‌ها؛ **فرم‌های UI از روی همین ساخته می‌شوند**،
+  پس افزودن سرویس جدید فقط تغییر داده است نه کد UI
+- `app/integrations/crypto.py` — رمزنگاری Fernet؛ بدون `ENCRYPTION_KEY` ذخیره‌ی Secret
+  **رد می‌شود** (به‌جای ذخیره‌ی ناامن)
+- `app/integrations/testers.py` — تست زنده‌ی اتصال بعد از ذخیره
+- تب «🔌 اتصال‌ها» در Mini App + دستور `/connections` در تلگرام
+- Secretها هرگز کامل به کلاینت برنمی‌گردند (فقط `••••1234`)؛ ویرایش بدون تایپ دوباره‌ی رمز
+
+**WordPress Agent (§3)**
+- خواندن آزاد: `list_posts`، `list_categories`، `content_index` (ضد Cannibalization)
+- نوشتن از دروازه‌ی تأیید: `create_draft`/`update_post` 🟡، `publish`/`delete_post` 🔴
+- پشتیبانی از فیلدهای Rank Math (title/description/canonical/focus keyword) و زمان‌بندی
+
+**سرویس‌های آماده:** وردپرس/ووکامرس، کانال تلگرام، SMTP، GSC، GA4
+**مسدود (با دلیل شفاف در UI):** Google Ads، Google Business Profile، Instagram
+
+**تست:** ۵۲ تست سبز — شامل رمزنگاری، ماسک‌شدن، merge نکردن رمز قدیمی، چرخش کلید،
+و اینکه `wordpress.publish` بدون دو تأیید اجرا نمی‌شود.
+
+> قدم بعدی فاز ۲: CRM پایه + PM Agent (گزارش صبحگاهی) + Content Agent.
 
 ---
 

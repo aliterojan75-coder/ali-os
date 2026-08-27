@@ -247,6 +247,19 @@
     </div>
   </section>
 
+  <!-- CONNECTIONS -->
+  <section class="view" id="v-conn">
+    <div class="card">
+      <h2><span class="ico">🔌</span> اتصال‌ها</h2>
+      <p class="muted-s" id="connIntro">
+        اینجا سرویس‌های بیرونی را به Ali OS وصل می‌کنی. اطلاعات محرمانه پیش از ذخیره
+        رمزنگاری می‌شوند و هرگز به‌صورت کامل نمایش داده نمی‌شوند.
+      </p>
+      <div id="keyWarn"></div>
+      <div class="list" id="connList"></div>
+    </div>
+  </section>
+
   <!-- LOGS -->
   <section class="view" id="v-logs">
     <div class="card">
@@ -292,6 +305,17 @@
   </div>
 </div>
 
+<!-- Connection sheet -->
+<div class="sheet-back" id="connBack">
+  <div class="sheet">
+    <div class="sheet-h">
+      <strong id="cs-title">اتصال سرویس</strong>
+      <button class="x" id="connClose">✕</button>
+    </div>
+    <div id="cs-body"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <nav class="tabs">
@@ -299,6 +323,7 @@
   <button data-v="tasks"><span class="ti">✅</span>تسک‌ها</button>
   <button data-v="projects"><span class="ti">📂</span>پروژه‌ها</button>
   <button data-v="memory"><span class="ti">🧠</span>حافظه</button>
+  <button data-v="conn"><span class="ti">🔌</span>اتصال‌ها</button>
   <button data-v="logs"><span class="ti">📡</span>لاگ</button>
 </nav>
 
@@ -532,6 +557,198 @@ async function loadLogs(){
   }).join('') : '<div class="empty">رویدادی نیست.</div>';
 }
 
+
+/* ---------- connections (integrations) ---------- */
+let CATALOG = null, CONNS = [], ENC_READY = true;
+
+function connStatusBadge(st){
+  const map = {connected:['b-done','متصل'], error:['b-urgent','خطا'],
+               pending:['b-normal','تأیید نشده'], disabled:['b-low','غیرفعال']};
+  const [cls,label] = map[st] || ['b-normal', st||'—'];
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+
+async function loadConnections(){
+  const list = $('#connList');
+  list.innerHTML = '<div class="empty">در حال بارگذاری…</div>';
+  try{
+    if(!window._projects) await loadProjects();
+    if(!CATALOG){
+      const c = await api('/api/integrations/catalog');
+      CATALOG = c.services; ENC_READY = c.encryption_ready;
+    }
+    CONNS = (await api('/api/integrations')).integrations;
+  }catch(e){
+    list.innerHTML = `<div class="empty">خطا در بارگذاری: ${esc(e.message)}</div>`;
+    return;
+  }
+
+  $('#keyWarn').innerHTML = ENC_READY ? '' :
+    `<div class="empty" style="border-color:rgba(255,120,120,.4)">
+       ⚠️ <b>ENCRYPTION_KEY روی سرور تنظیم نشده است.</b><br>
+       تا وقتی این کلید تنظیم نشود، Ali OS از ذخیره‌ی اطلاعات محرمانه خودداری می‌کند
+       (تا رمزها ناخواسته بدون رمزنگاری ذخیره نشوند).<br>
+       یک کلید با <code>python -m app.tools.gen_key</code> بساز و در متغیرهای محیطی سرور بگذار.
+     </div>`;
+
+  const byService = {};
+  CONNS.forEach(c => { (byService[c.service] = byService[c.service] || []).push(c); });
+
+  const groups = {};
+  CATALOG.forEach(sv => { (groups[sv.category] = groups[sv.category] || []).push(sv); });
+
+  let html = '';
+  Object.keys(groups).forEach(cat => {
+    html += `<div class="muted-s" style="margin:14px 2px 6px">${esc(cat)}</div>`;
+    groups[cat].forEach(sv => {
+      const mine = byService[sv.slug] || [];
+      const badges = mine.map(c =>
+        `<span class="badge b-proj">${esc(c.project_name || 'عمومی')}</span>${connStatusBadge(c.status)}`
+      ).join(' ') || (sv.available ? '<span class="badge b-low">وصل نشده</span>'
+                                   : '<span class="badge b-low">فاز '+sv.phase+'</span>');
+      html += `
+        <div class="item" style="cursor:pointer" onclick="openConn('${sv.slug}')">
+          <div style="display:flex;gap:10px;align-items:flex-start">
+            <div style="font-size:22px">${sv.icon}</div>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;justify-content:space-between;gap:8px">
+                <strong>${esc(sv.name)}</strong>
+                ${sv.available?'':'<span class="badge b-low">به‌زودی</span>'}
+              </div>
+              <div class="muted-s" style="margin:3px 0 6px">${esc(sv.summary)}</div>
+              <div>${badges}</div>
+              ${mine.filter(c=>c.status==='error'&&c.last_error).map(c=>
+                `<div class="muted-s" style="color:#ff9b9b;margin-top:5px">⚠️ ${esc(c.last_error)}</div>`).join('')}
+            </div>
+          </div>
+        </div>`;
+    });
+  });
+  list.innerHTML = html || '<div class="empty">سرویسی موجود نیست.</div>';
+}
+
+function openConn(slug){
+  const sv = CATALOG.find(x => x.slug === slug);
+  if(!sv) return;
+  const existing = CONNS.filter(c => c.service === slug);
+
+  let body = `<p class="muted-s">${esc(sv.summary)}</p>`;
+
+  if(!sv.available){
+    body += `<div class="empty" style="margin:10px 0">🔒 ${esc(sv.blocked_reason)}</div>`;
+  }
+
+  if(existing.length){
+    body += `<div class="muted-s" style="margin:12px 0 6px">اتصال‌های فعلی</div>`;
+    existing.forEach(c => {
+      body += `<div class="item">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+          <div><strong>${esc(c.project_name || 'عمومی')}</strong> ${connStatusBadge(c.status)}</div>
+          <div style="display:flex;gap:6px">
+            <button class="btn sm ghost" onclick="testConn(${c.id})">تست</button>
+            <button class="btn sm ghost" onclick="removeConn(${c.id})">حذف</button>
+          </div>
+        </div>
+        ${c.last_error?`<div class="muted-s" style="color:#ff9b9b;margin-top:6px">${esc(c.last_error)}</div>`:''}
+        ${c.configured_fields.length?`<div class="muted-s" style="margin-top:6px">فیلدهای ذخیره‌شده: ${c.configured_fields.map(esc).join('، ')}</div>`:''}
+      </div>`;
+    });
+  }
+
+  if(sv.guide && sv.guide.length){
+    body += `<details style="margin:12px 0"><summary class="muted-s">راهنمای گرفتن اطلاعات</summary>
+      <ol class="muted-s" style="padding-inline-start:18px;line-height:2">
+        ${sv.guide.map(g=>`<li>${esc(g)}</li>`).join('')}
+      </ol></details>`;
+  }
+
+  if(sv.available){
+    body += `<div id="cs-form">`;
+    if(sv.per_project){
+      body += `<div class="field"><label>پروژه</label>
+        <select id="cf-project">${(window._projects||[]).map(p=>`<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('')}</select>
+      </div>`;
+    }
+    sv.fields.forEach(f => {
+      const type = f.type==='password' ? 'password' : (f.type==='email'?'email':'text');
+      const input = f.type==='textarea'
+        ? `<textarea id="cf-${esc(f.key)}" placeholder="${esc(f.placeholder)}"></textarea>`
+        : `<input id="cf-${esc(f.key)}" type="${type}" placeholder="${esc(f.placeholder)}"
+             autocomplete="off" autocapitalize="off" spellcheck="false">`;
+      body += `<div class="field">
+        <label>${esc(f.label)}${f.required?'':' <span class="muted-s">(اختیاری)</span>'}</label>
+        ${input}
+        ${f.help?`<div class="muted-s" style="margin-top:4px">${esc(f.help)}</div>`:''}
+      </div>`;
+    });
+    body += `<div class="muted-s" style="margin:10px 0">
+        🔐 مقادیر محرمانه با Fernet رمزنگاری و ذخیره می‌شوند و دیگر کامل نمایش داده نمی‌شوند.
+        هنگام ویرایش، اگر فیلد رمز را خالی بگذاری مقدار قبلی حفظ می‌شود.
+      </div>
+      <div style="display:flex;gap:10px">
+        <button class="btn" id="cf-save" style="flex:1">ذخیره و تست اتصال</button>
+        <button class="btn ghost" id="cf-cancel">انصراف</button>
+      </div></div>`;
+  }
+
+  $('#cs-title').textContent = sv.icon + ' ' + sv.name;
+  $('#cs-body').innerHTML = body;
+  $('#connBack').classList.add('open');
+
+  if(sv.available){
+    $('#cf-cancel').onclick = closeConn;
+    $('#cf-save').onclick = () => saveConn(sv);
+  }
+}
+function closeConn(){ $('#connBack').classList.remove('open'); }
+
+async function saveConn(sv){
+  const btn = $('#cf-save');
+  const values = {};
+  sv.fields.forEach(f => {
+    const el = $('#cf-'+CSS.escape(f.key));
+    if(el && el.value.trim()) values[f.key] = el.value.trim();
+  });
+  const payload = {values};
+  if(sv.per_project){
+    const sel = $('#cf-project');
+    if(!sel || !sel.value){ toast('اول پروژه را انتخاب کن'); return; }
+    payload.project_slug = sel.value;
+  }
+  btn.disabled = true; btn.textContent = 'در حال تست اتصال…';
+  try{
+    const r = await api('/api/integrations/'+encodeURIComponent(sv.slug),
+                        {method:'POST', body: JSON.stringify(payload)});
+    toast(r.connected ? '✅ '+r.message : '⚠️ '+r.message);
+    closeConn();
+    await loadConnections();
+  }catch(e){
+    toast('خطا: '+e.message);
+  }finally{
+    btn.disabled = false; btn.textContent = 'ذخیره و تست اتصال';
+  }
+}
+
+async function testConn(id){
+  toast('در حال تست…');
+  try{
+    const r = await api('/api/integrations/'+id+'/test', {method:'POST'});
+    toast(r.connected ? '✅ '+r.message : '⚠️ '+r.message);
+    await loadConnections();
+    closeConn();
+  }catch(e){ toast('خطا: '+e.message); }
+}
+
+async function removeConn(id){
+  if(!confirm('این اتصال حذف شود؟ اطلاعات ذخیره‌شده پاک می‌شود.')) return;
+  try{
+    await api('/api/integrations/'+id, {method:'DELETE'});
+    toast('حذف شد');
+    await loadConnections();
+    closeConn();
+  }catch(e){ toast('خطا: '+e.message); }
+}
+
 /* ---------- navigation ---------- */
 document.querySelectorAll('nav.tabs button').forEach(b=>{
   b.onclick = ()=>{
@@ -544,6 +761,7 @@ document.querySelectorAll('nav.tabs button').forEach(b=>{
     if(v==='tasks') loadTasks('open');
     if(v==='projects') loadProjectView();
     if(v==='memory') loadMemory();
+    if(v==='conn') loadConnections();
     if(v==='logs') loadLogs();
   };
 });
@@ -558,6 +776,8 @@ function openSheet(){ sheet.classList.add('open'); $('#t-title').focus(); }
 function closeSheet(){ sheet.classList.remove('open'); $('#t-title').value=''; $('#t-desc').value=''; }
 $('#fab').onclick=openSheet;
 $('#sheetClose').onclick=closeSheet;
+$('#connClose').onclick=closeConn;
+$('#connBack').onclick=(e)=>{ if(e.target.id==='connBack') closeConn(); };
 $('#t-cancel').onclick=closeSheet;
 sheet.onclick=e=>{ if(e.target===sheet) closeSheet(); };
 $('#t-save').onclick=async ()=>{
