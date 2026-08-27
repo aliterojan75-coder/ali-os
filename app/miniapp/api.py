@@ -1183,11 +1183,13 @@ def google_overview_api(slug: str | None = None):
     if not (gsc_creds or ga4_creds):
         return jsonify({"ok": False, "error": "Google integrations not configured — از تب اتصال‌ها وصل کن", "needs_setup": True}), 404
 
+    fresh = request.args.get("fresh", "").lower() in ("1", "true", "yes")
     data = get_project_google_data(
         gsc_creds=gsc_creds,
         gsc_property=gsc_prop,
         ga4_creds=ga4_creds,
         ga4_property=ga4_prop,
+        force_refresh=fresh,
     )
     return jsonify({"ok": True, "google": data, "project_id": project_id})
 
@@ -1534,6 +1536,37 @@ def financial_summary_api():
     contracts = project_contracts_summary()
 
     return jsonify({"ok": True, "summary": summary, "contracts": contracts})
+
+
+@api.post("/sales/send-followup")
+def sales_send_followup_api():
+    """Queue a sales follow-up message to the client's Telegram — via YELLOW approval.
+
+    Body: {deal_uid?, contact_uid?, tone: professional|friendly|urgent, dry_run: bool (default true)}
+    """
+    from app.agents.sales_agent import prepare_followup_send
+
+    body = request.get_json(silent=True) or {}
+    dry_run = body.get("dry_run", True)
+    if isinstance(dry_run, str):
+        dry_run = dry_run.lower() in ("1", "true", "yes")
+
+    res = prepare_followup_send(
+        deal_uid=body.get("deal_uid"),
+        contact_uid=body.get("contact_uid"),
+        tone=body.get("tone", "professional"),
+        dry_run=dry_run,
+        requested_by=None,
+        chat_id=config_owner_chat_id(),
+    )
+    status = 200 if res.get("ok") else 400
+    return jsonify(res), status
+
+
+def config_owner_chat_id() -> int | None:
+    """Best-known Telegram chat of the owner (for approval cards triggered from the dashboard)."""
+    ids = getattr(config, "ADMIN_CHAT_IDS", set())
+    return sorted(ids)[0] if ids else None
 
 
 @api.post("/financial/send-reminders")

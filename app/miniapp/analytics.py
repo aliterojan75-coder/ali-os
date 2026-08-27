@@ -316,9 +316,14 @@ def gsc_trend_overview() -> dict:
         # Try to get stored trends (no API call)
         gsc = get_gsc_daily_trend(days=28)
         ga4 = get_ga4_daily_trend(days=28)
-        return {"gsc": gsc, "ga4": ga4}
+        try:
+            from app.integrations.gsc_storage import get_declining_pages
+            declining = get_declining_pages()
+        except Exception:
+            declining = []
+        return {"gsc": gsc, "ga4": ga4, "declining_pages": declining}
     except Exception:
-        return {"gsc": {"dates": [], "clicks": [], "impressions": []}, "ga4": {"dates": [], "sessions": []}}
+        return {"gsc": {"dates": [], "clicks": [], "impressions": []}, "ga4": {"dates": [], "sessions": []}, "declining_pages": []}
 
 
 def overview() -> dict:

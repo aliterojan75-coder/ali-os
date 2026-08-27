@@ -172,31 +172,76 @@ def sync_gsc_to_storage(
     # Fetch daily breakdown
     end_dt = datetime.now(timezone.utc) - timedelta(days=3)
     start_dt = end_dt - timedelta(days=days)
+    start_s, end_s = start_dt.strftime("%Y-%m-%d"), end_dt.strftime("%Y-%m-%d")
 
     try:
         data = gsc_query(
             creds,
             property_url,
-            start_date=start_dt.strftime("%Y-%m-%d"),
-            end_date=end_dt.strftime("%Y-%m-%d"),
+            start_date=start_s,
+            end_date=end_s,
             dimensions=["date"],
             row_limit=1000,
         )
         rows = data.get("rows", [])
-        count = 0
+
+        # Per-date totals + top pages/queries. The page/query breakdown powers the
+        # declining-pages and cannibalization detectors without extra API quota.
+        by_date: dict[str, dict] = {}
         for r in rows:
             keys = r.get("keys", [])
             if not keys:
                 continue
-            date_str = keys[0]
+            by_date[keys[0]] = {
+                "clicks": int(r.get("clicks", 0)),
+                "impressions": int(r.get("impressions", 0)),
+                "ctr": float(r.get("ctr", 0)),
+                "position": float(r.get("position", 0)),
+                "pages": [],
+                "queries": [],
+            }
+
+        for dims, bucket, limit in ((["date", "page"], "pages", 15), (["date", "query"], "queries", 15)):
+            try:
+                detail = gsc_query(
+                    creds,
+                    property_url,
+                    start_date=start_s,
+                    end_date=end_s,
+                    dimensions=dims,
+                    row_limit=2500,
+                )
+                for r in detail.get("rows", []):
+                    keys = r.get("keys", [])
+                    if len(keys) < 2 or keys[0] not in by_date:
+                        continue
+                    item = {
+                        dims[1]: keys[1],
+                        "clicks": int(r.get("clicks", 0)),
+                        "impressions": int(r.get("impressions", 0)),
+                        "ctr": float(r.get("ctr", 0)),
+                        "position": float(r.get("position", 0)),
+                    }
+                    by_date[keys[0]][bucket].append(item)
+                # keep the strongest rows per date to keep JSON small
+                for d in by_date.values():
+                    d[bucket].sort(key=lambda x: x["impressions"], reverse=True)
+                    d[bucket] = d[bucket][:limit]
+            except Exception:  # noqa: BLE001 — breakdowns are best-effort
+                pass
+
+        count = 0
+        for date_str, tot in by_date.items():
             save_gsc_daily(
                 project_id=project_id,
                 property_url=property_url,
                 date=date_str,
-                clicks=int(r.get("clicks", 0)),
-                impressions=int(r.get("impressions", 0)),
-                ctr=float(r.get("ctr", 0)),
-                position=float(r.get("position", 0)),
+                clicks=tot["clicks"],
+                impressions=tot["impressions"],
+                ctr=tot["ctr"],
+                position=tot["position"],
+                queries=tot["queries"],
+                pages=tot["pages"],
             )
             count += 1
         return count
@@ -205,3 +250,67 @@ def sync_gsc_to_storage(
         log = get_logger("gsc_storage")
         log.warning("gsc.sync_failed", extra={"extra_fields": {"error": str(exc)}})
         return 0
+
+
+def get_declining_pages(
+    *,
+    days: int = 28,
+    min_impressions: int = 200,
+    threshold: float = 0.3,
+    limit: int = 8,
+) -> list[dict]:
+    """Pages whose clicks dropped >threshold vs the previous equal period.
+
+    Pure storage read (no Google API) — powers the 'صفحات در حال مرگ' card:
+    compare last `days` vs the `days` before it, from gsc_daily_stats.pages_json.
+    """
+    from datetime import date as _date, timedelta as _td
+
+    today = _date.today()
+    cur_start = (today - _td(days=days)).isoformat()
+    prev_start = (today - _td(days=2 * days)).isoformat()
+
+    prev_rows = db.query_all(
+        "SELECT pages_json FROM gsc_daily_stats WHERE date >= ? AND date < ? AND pages_json != '[]'",
+        (prev_start, cur_start),
+    )
+    cur_rows = db.query_all(
+        "SELECT pages_json FROM gsc_daily_stats WHERE date >= ? AND pages_json != '[]'",
+        (cur_start,),
+    )
+
+    def _agg(rs) -> dict[str, dict]:
+        agg: dict[str, dict] = {}
+        for r in rs:
+            try:
+                items = json.loads(r["pages_json"])
+            except (ValueError, TypeError):
+                continue
+            for it in items:
+                page = it.get("page")
+                if not page:
+                    continue
+                slot = agg.setdefault(page, {"clicks": 0, "impressions": 0})
+                slot["clicks"] += it.get("clicks", 0)
+                slot["impressions"] += it.get("impressions", 0)
+        return agg
+
+    prev, cur = _agg(prev_rows), _agg(cur_rows)
+
+    out: list[dict] = []
+    for page, p in prev.items():
+        if p["impressions"] < min_impressions or p["clicks"] <= 0:
+            continue
+        c = cur.get(page, {"clicks": 0, "impressions": 0})
+        drop = (p["clicks"] - c["clicks"]) / p["clicks"]
+        if drop >= threshold:
+            out.append({
+                "page": page,
+                "prev_clicks": p["clicks"],
+                "cur_clicks": c["clicks"],
+                "prev_impressions": p["impressions"],
+                "cur_impressions": c["impressions"],
+                "drop_percent": round(drop * 100),
+            })
+    out.sort(key=lambda x: (-x["drop_percent"], -x["prev_clicks"]))
+    return out[:limit]
