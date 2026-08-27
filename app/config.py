@@ -48,6 +48,11 @@ class Config:
     TURSO_DATABASE_URL = os.environ.get("TURSO_DATABASE_URL", "")
     TURSO_AUTH_TOKEN = os.environ.get("TURSO_AUTH_TOKEN", "")
 
+    # Cron / Automation (§16)
+    CRON_SECRET = os.environ.get("CRON_SECRET", os.environ.get("WEBHOOK_SECRET", "ali_os_wh_9f3a7c2e8b1d"))
+    # Content Agent
+    CONTENT_DEFAULT_WORDS = int(os.environ.get("CONTENT_DEFAULT_WORDS", "2000"))
+
     @classmethod
     def webhook_url(cls) -> str:
         return f"{cls.PUBLIC_URL}/webhook" if cls.PUBLIC_URL else ""

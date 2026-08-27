@@ -160,7 +160,7 @@
     background:rgba(10,14,24,.82);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
     border-top:1px solid var(--line);
     padding:7px 8px calc(7px + env(safe-area-inset-bottom));
-    display:grid;grid-template-columns:repeat(6,1fr);gap:2px}
+    display:grid;grid-template-columns:repeat(10,1fr);gap:2px;overflow-x:auto}
   nav.tabs button{background:transparent;border:0;color:var(--muted-2);position:relative;
     font-family:inherit;font-size:9.5px;font-weight:700;padding:7px 2px;border-radius:14px;
     display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;
@@ -311,10 +311,50 @@
         <div>
           <h2 style="margin:0">سلام <span id="uname">علی</span> 👋</h2>
           <div class="sub" id="date"></div>
+          <div class="sub" id="jalaliDate" style="margin-top:2px;color:var(--brand)"></div>
         </div>
+        <button class="btn sm" onclick="openMorningReport()" style="white-space:nowrap">🌅 گزارش صبحگاهی</button>
       </div>
       <div class="vel" id="velocity"></div>
       <div class="muted-s" id="model" style="margin-top:10px"></div>
+    </div>
+
+    <div class="card" id="notifPreviewCard" style="display:none">
+      <h2><span class="ico">🔔</span> اعلان‌های مهم <span class="right" id="notifPreviewCount"></span></h2>
+      <div class="list" id="notifPreview"></div>
+      <button class="btn sm ghost" style="width:100%;margin-top:8px" onclick="document.querySelector('nav.tabs button[data-v=notifications]').click()">دیدن همه اعلان‌ها</button>
+    </div>
+
+    <div class="card" id="googleCard">
+      <h2><span class="ico">🔍</span> داده گوگل (GSC + GA4) <span class="right" id="googleStatus">در حال بررسی…</span></h2>
+      <div id="googleSummary"></div>
+      <div class="chart-wrap" id="googleDailyChart" style="margin:10px 0"></div>
+      <div class="list" id="googleTopQueries"></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn sm ghost" style="flex:1" onclick="loadGoogleData()">🔄 بروزرسانی گوگل</button>
+        <button class="btn sm ghost" style="flex:1" onclick="document.querySelector('nav.tabs button[data-v=conn]').click()">🔌 تنظیم اتصال</button>
+        <button class="btn sm ghost" style="flex:1" onclick="syncGoogleToStorage()">💾 ذخیره تاریخچه</button>
+      </div>
+    </div>
+
+    <div class="card" id="businessCard">
+      <h2><span class="ico">📊</span> تحلیل کسب‌وکار <span class="right" id="businessScore"></span></h2>
+      <div id="businessSummary"></div>
+      <div class="list" id="businessInsights"></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn sm ghost" style="flex:1" onclick="loadBusinessAnalysis()">🔄 تحلیل مجدد</button>
+        <button class="btn sm ghost" style="flex:1" onclick="openMorningReport()">🌅 گزارش صبحگاهی</button>
+      </div>
+    </div>
+
+    <div class="card" id="salesCard">
+      <h2><span class="ico">💼</span> پایپ‌لاین فروش <span class="right" id="salesValue"></span></h2>
+      <div id="salesSummary"></div>
+      <div class="list" id="salesList"></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn sm ghost" style="flex:1" onclick="loadSalesPipeline()">🔄 بروزرسانی فروش</button>
+        <button class="btn sm ghost" style="flex:1" onclick="document.querySelector('nav.tabs button[data-v=crm]').click()">👥 CRM</button>
+      </div>
     </div>
 
     <div class="card">
@@ -393,6 +433,104 @@
       <div id="apSummary"></div>
       <div class="sep"></div>
       <div class="list" id="apList"></div>
+    </div>
+  </section>
+
+  <!-- ═══ CRM ═══ -->
+  <section class="view" id="v-crm">
+    <div class="card">
+      <h2><span class="ico">👥</span> CRM — مخاطبان و معاملات <span class="right" id="crmCount"></span></h2>
+      <div class="stats" id="crmStats"></div>
+      <div class="sep"></div>
+      <div class="seg" id="crmSeg">
+        <button class="on" data-f="contacts">مخاطبان</button>
+        <button data-f="deals">معاملات</button>
+        <button data-f="followups">پیگیری‌ها</button>
+      </div>
+      <div class="list" id="crmList"></div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn sm" style="flex:1" onclick="openCrmContactSheet()">➕ مخاطب جدید</button>
+        <button class="btn sm ghost" style="flex:1" onclick="openCrmDealSheet()">💼 معامله جدید</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ CONTENT ═══ -->
+  <section class="view" id="v-content">
+    <div class="card">
+      <h2><span class="ico">📝</span> محتوا — پیش‌نویس‌ها <span class="right" id="contentCount"></span></h2>
+      <div class="stats" id="contentStats"></div>
+      <div class="sep"></div>
+      <div class="seg" id="contentSeg">
+        <button class="on" data-f="all">همه</button>
+        <button data-f="draft">پیش‌نویس</button>
+        <button data-f="pending_approval">منتظر تأیید</button>
+        <button data-f="published">منتشرشده</button>
+      </div>
+      <div class="list" id="contentList"></div>
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+        <button class="btn sm" style="flex:1" onclick="openContentGenerateSheet()">✨ تولید مقاله جدید</button>
+        <button class="btn sm ghost" style="flex:1" onclick="loadContent()">🔄 بروزرسانی</button>
+        <button class="btn sm ghost" style="flex:1" onclick="loadGscTopicSuggestions()">🔍 پیشنهاد از GSC</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="v-content-suggest" style="display:none">
+    <div class="card">
+      <h2><span class="ico">💡</span> پیشنهاد موضوع از Search Console</h2>
+      <div class="muted-s">موضوعات با ایمپرشن بالا و CTR پایین — فرصت طلایی برای محتوا</div>
+      <div class="list" id="gscSuggestionsList" style="margin-top:10px"></div>
+      <button class="btn sm ghost" style="width:100%;margin-top:10px" onclick="document.querySelector('nav.tabs button[data-v=content]').click()">بازگشت به محتوا</button>
+    </div>
+  </section>
+
+
+
+  <!-- ═══ FINANCIAL (Monthly Income) ═══ -->
+  <section class="view" id="v-financial">
+    <div class="card">
+      <h2><span class="ico">💰</span> درآمد ماهانه پروژه‌ها <span class="right" id="financialMonth"></span></h2>
+      <div class="stats" id="financialStats"></div>
+      <div class="sep"></div>
+      <div id="financialSummary"></div>
+      <div class="sep"></div>
+      <div class="seg" id="financialSeg">
+        <button class="on" data-f="current">ماه جاری</button>
+        <button data-f="overdue">معوق</button>
+        <button data-f="pending">در انتظار</button>
+        <button data-f="all">همه</button>
+      </div>
+      <div class="list" id="financialList"></div>
+            <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+        <button class="btn sm" style="flex:1" onclick="openIncomeSheet()">➕ ثبت واریز</button>
+        <button class="btn sm ghost" style="flex:1" onclick="loadFinancial()">🔄 بروزرسانی</button>
+        <button class="btn sm ghost" style="flex:1" onclick="sendFinancialReminders(true)">👁 پیش‌نمایش یادآوری</button>
+        <button class="btn sm" style="flex:1;background:linear-gradient(135deg,#ff6b81,#ff3b6b)" onclick="sendFinancialReminders(false)">📤 ارسال یادآوری معوق</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2><span class="ico">📋</span> قراردادهای فعال</h2>
+      <div class="list" id="contractsList"></div>
+    </div>
+    <div class="card" id="financialRemindersCard" style="display:none">
+      <h2><span class="ico">📤</span> پیش‌نمایش یادآوری‌های پرداخت</h2>
+      <div class="list" id="financialRemindersList"></div>
+    </div>
+  </section>
+
+
+  <!-- ═══ NOTIFICATIONS ═══ -->
+  <section class="view" id="v-notifications">
+    <div class="card">
+      <h2><span class="ico">🔔</span> اعلان‌ها <span class="right" id="notifCount"></span></h2>
+      <div id="notifSummary"></div>
+      <div class="sep"></div>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <button class="btn sm ghost" style="flex:1" onclick="markAllNotifRead()">✅ همه خوانده شد</button>
+        <button class="btn sm ghost" style="flex:1" onclick="loadNotifications()">🔄 بروزرسانی</button>
+      </div>
+      <div class="list" id="notifList"></div>
     </div>
   </section>
 
@@ -488,13 +626,151 @@
   </div>
 </div>
 
+<!-- Morning Report Sheet -->
+<div class="sheet-back" id="morningBack">
+  <div class="sheet">
+    <div class="sheet-grip"></div>
+    <div class="sheet-h">
+      <strong id="morningTitle">🌅 گزارش صبحگاهی</strong>
+      <button class="x" id="morningClose">✕</button>
+    </div>
+    <div id="morningBody"></div>
+  </div>
+</div>
+
+<!-- CRM Contact Sheet -->
+<div class="sheet-back" id="crmContactBack">
+  <div class="sheet">
+    <div class="sheet-grip"></div>
+    <div class="sheet-h">
+      <strong>👥 مخاطب جدید / ویرایش</strong>
+      <button class="x" id="crmContactClose">✕</button>
+    </div>
+    <div id="crmContactBody">
+      <div class="field"><label>نام *</label><input id="cc-name" placeholder="مثلاً: علی رضایی" /></div>
+      <div class="grid2">
+        <div class="field"><label>شرکت</label><input id="cc-company" placeholder="Net Nova" /></div>
+        <div class="field"><label>نقش</label><input id="cc-role" placeholder="مدیر" /></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>تلفن</label><input id="cc-phone" placeholder="۰۹۱۲..." /></div>
+        <div class="field"><label>ایمیل</label><input id="cc-email" type="email" placeholder="ali@example.com" /></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>تلگرام</label><input id="cc-telegram" placeholder="@username" /></div>
+        <div class="field"><label>وضعیت</label><select id="cc-status"><option value="lead">سرنخ</option><option value="prospect">مشتری بالقوه</option><option value="customer">مشتری</option><option value="partner">شریک</option><option value="archived">آرشیو</option></select></div>
+      </div>
+      <div class="field"><label>پروژه</label><select id="cc-project"><option value="">بدون پروژه</option></select></div>
+      <div class="field"><label>یادداشت</label><textarea id="cc-notes" placeholder="توضیحات..."></textarea></div>
+      <div style="display:flex;gap:10px"><button class="btn" id="cc-save" style="flex:1">ذخیره</button><button class="btn ghost" id="cc-cancel">انصراف</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- CRM Deal Sheet -->
+<div class="sheet-back" id="crmDealBack">
+  <div class="sheet">
+    <div class="sheet-grip"></div>
+    <div class="sheet-h">
+      <strong>💼 معامله جدید</strong>
+      <button class="x" id="crmDealClose">✕</button>
+    </div>
+    <div id="crmDealBody">
+      <div class="field"><label>عنوان *</label><input id="cd-title" placeholder="مثلاً: پروژه سایت گیاهکده" /></div>
+      <div class="grid2">
+        <div class="field"><label>مبلغ</label><input id="cd-amount" type="number" placeholder="۰" /></div>
+        <div class="field"><label>ارز</label><select id="cd-currency"><option value="IRT">تومان</option><option value="IRR">ریال</option><option value="USD">دلار</option></select></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>مرحله</label><select id="cd-stage"><option value="lead">سرنخ</option><option value="qualified">واجد شرایط</option><option value="proposal">پیشنهاد</option><option value="negotiation">مذاکره</option><option value="won">برنده</option><option value="lost">باخته</option></select></div>
+        <div class="field"><label>احتمال ٪</label><input id="cd-prob" type="number" min="0" max="100" value="50" /></div>
+      </div>
+      <div class="field"><label>مخاطب (UID)</label><input id="cd-contact" placeholder="اختیاری - contact_uid" /></div>
+      <div class="field"><label>پروژه</label><select id="cd-project"><option value="">بدون پروژه</option></select></div>
+      <div class="field"><label>یادداشت</label><textarea id="cd-notes"></textarea></div>
+      <div style="display:flex;gap:10px"><button class="btn" id="cd-save" style="flex:1">ذخیره</button><button class="btn ghost" id="cd-cancel">انصراف</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- CRM Detail Sheet -->
+<div class="sheet-back" id="crmDetailBack">
+  <div class="sheet">
+    <div class="sheet-grip"></div>
+    <div class="sheet-h">
+      <strong id="crmDetailTitle">پرونده مخاطب</strong>
+      <button class="x" id="crmDetailClose">✕</button>
+    </div>
+    <div id="crmDetailBody"></div>
+  </div>
+</div>
+
+<!-- Content Generate Sheet -->
+<div class="sheet-back" id="contentGenBack">
+  <div class="sheet">
+    <div class="sheet-grip"></div>
+    <div class="sheet-h">
+      <strong>✨ تولید مقاله جدید</strong>
+      <button class="x" id="contentGenClose">✕</button>
+    </div>
+    <div id="contentGenBody">
+      <div class="field"><label>موضوع مقاله *</label><input id="cg-topic" placeholder="مثلاً: فواید گلاب برای پوست" /></div>
+      <div class="field"><label>پروژه</label><select id="cg-project"><option value="">بدون پروژه</option></select></div>
+      <div class="field"><label>تعداد کلمات هدف</label><input id="cg-words" type="number" value="2000" /></div>
+      <div class="field"><label>بررسی Cannibalization</label><select id="cg-cannibal"><option value="1">بله</option><option value="0">خیر</option></select></div>
+      <div class="muted-s" style="margin:8px 0">موضوع پس از تأیید (🟡) توسط Content Agent تولید می‌شود. سپس می‌توانی آن را به وردپرس به‌عنوان پیش‌نویس بفرستی (🟡) و در نهایت منتشر کنی (🔴).</div>
+      <div style="display:flex;gap:10px"><button class="btn" id="cg-save" style="flex:1">تولید محتوا</button><button class="btn ghost" id="cg-cancel">انصراف</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- Content Detail Sheet -->
+<div class="sheet-back" id="contentDetailBack">
+  <div class="sheet">
+    <div class="sheet-grip"></div>
+    <div class="sheet-h">
+      <strong id="contentDetailTitle">پیش‌نویس محتوا</strong>
+      <button class="x" id="contentDetailClose">✕</button>
+    </div>
+    <div id="contentDetailBody"></div>
+  </div>
+</div>
+
+<!-- Income Sheet -->
+<div class="sheet-back" id="incomeBack">
+  <div class="sheet">
+    <div class="sheet-grip"></div>
+    <div class="sheet-h">
+      <strong>💰 ثبت واریز ماهانه</strong>
+      <button class="x" id="incomeClose">✕</button>
+    </div>
+    <div id="incomeBody">
+      <div class="field"><label>پروژه *</label><select id="inc-project"><option value="">انتخاب پروژه</option></select></div>
+      <div class="grid2">
+        <div class="field"><label>مبلغ (تومان) *</label><input id="inc-amount" type="number" placeholder="15000000" /></div>
+        <div class="field"><label>ماه شمسی (YYYY-MM) *</label><input id="inc-month" placeholder="1404-06" /></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>وضعیت</label><select id="inc-status"><option value="pending">در انتظار</option><option value="paid">پرداخت شده</option><option value="overdue">معوق</option></select></div>
+        <div class="field"><label>روش پرداخت</label><input id="inc-method" placeholder="کارت به کارت" /></div>
+      </div>
+      <div class="field"><label>یادداشت</label><textarea id="inc-notes" placeholder="شماره تراکنش، توضیحات..."></textarea></div>
+      <div style="display:flex;gap:10px"><button class="btn" id="inc-save" style="flex:1">ثبت درآمد</button><button class="btn ghost" id="inc-cancel">انصراف</button></div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <nav class="tabs">
   <button data-v="overview" class="active"><span class="ti">◈</span>خلاصه</button>
   <button data-v="tasks"><span class="ti">✓</span>تسک‌ها</button>
   <button data-v="projects"><span class="ti">▦</span>پروژه‌ها</button>
+  <button data-v="crm"><span class="ti">👥</span>CRM</button>
+  <button data-v="content"><span class="ti">📝</span>محتوا</button>
+  <button data-v="financial"><span class="ti">💰</span>مالی</button>
   <button data-v="approvals"><span class="ti">🔐</span>تأیید</button>
+  <button data-v="notifications"><span class="ti">🔔</span>اعلان</button>
   <button data-v="conn"><span class="ti">🔌</span>اتصال</button>
   <button data-v="more"><span class="ti">⋯</span>بیشتر</button>
 </nav>
@@ -735,20 +1011,85 @@ async function loadOverview(){
     ? hot.map(t=>taskItem(t,true)).join('')
     : emptyState('🎉','هیچ کار فوری‌ای نمانده');
 
+  // CRM quick stats in overview (if exists)
+  try{
+    if(d.crm){
+      const cs = d.crm;
+      // Could add a card, but for now just log
+    }
+    if(d.counts && $('#jalaliDate') && d.counts){
+      // Try to get jalali from morning endpoint quickly if not already
+      // We'll fetch morning report's date
+      if(!$('#jalaliDate').textContent){
+        try{
+          const mr = await api('/api/morning');
+          if(mr.report && mr.report.date) $('#jalaliDate').textContent = mr.report.date.jalali_str + ' — ' + mr.report.date.tehran_time;
+        }catch(e){}
+      }
+    }
+  }catch(e){}
+
+  // Load notification preview
+  try{ await loadNotifPreview(); }catch(e){}
+  try{ await loadGoogleData(); }catch(e){}
+  try{ await loadBusinessAnalysis(); }catch(e){}
+  try{ await loadSalesPipeline(); }catch(e){}
+
   updateBadges();
 }
 
 function updateBadges(){
   if(!ANALYTICS) return;
+  // Approvals
   const n = ANALYTICS.approvals.pending;
   const btn = document.querySelector('nav.tabs button[data-v="approvals"]');
-  if(!btn) return;
-  const old = btn.querySelector('.nb');
-  if(old) old.remove();
-  if(n>0){
-    const b=document.createElement('span');
-    b.className='nb'; b.textContent=fa(n);
-    btn.appendChild(b);
+  if(btn){
+    const old = btn.querySelector('.nb');
+    if(old) old.remove();
+    if(n>0){
+      const b=document.createElement('span');
+      b.className='nb'; b.textContent=fa(n);
+      btn.appendChild(b);
+    }
+  }
+  // Notifications
+  const notif = ANALYTICS.notifications ? ANALYTICS.notifications.total : 0;
+  const notifBtn = document.querySelector('nav.tabs button[data-v="notifications"]');
+  if(notifBtn){
+    const old = notifBtn.querySelector('.nb');
+    if(old) old.remove();
+    if(notif>0){
+      const b=document.createElement('span');
+      b.className='nb'; b.textContent=fa(notif);
+      b.style.background='var(--warn)';
+      notifBtn.appendChild(b);
+    }
+  }
+  // CRM overdue
+  const crmOverdue = ANALYTICS.crm ? ANALYTICS.crm.overdue_followups : 0;
+  const crmBtn = document.querySelector('nav.tabs button[data-v="crm"]');
+  if(crmBtn){
+    const old = crmBtn.querySelector('.nb');
+    if(old) old.remove();
+    if(crmOverdue>0){
+      const b=document.createElement('span');
+      b.className='nb'; b.textContent=fa(crmOverdue);
+      b.style.background='var(--brand)';
+      crmBtn.appendChild(b);
+    }
+  }
+  // Content pending
+  const contentPending = ANALYTICS.content ? (ANALYTICS.content.by_status.pending_approval || 0) : 0;
+  const contentBtn = document.querySelector('nav.tabs button[data-v="content"]');
+  if(contentBtn){
+    const old = contentBtn.querySelector('.nb');
+    if(old) old.remove();
+    if(contentPending>0){
+      const b=document.createElement('span');
+      b.className='nb'; b.textContent=fa(contentPending);
+      b.style.background='var(--brand-2)';
+      contentBtn.appendChild(b);
+    }
   }
 }
 
@@ -803,6 +1144,15 @@ async function loadProjects(){
   window._projects = d.projects;
   const sel = $('#t-project');
   if(sel) sel.innerHTML = '<option value="">بدون پروژه</option>' +
+    d.projects.map(p=>`<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('');
+  const sel2 = $('#cc-project');
+  if(sel2) sel2.innerHTML = '<option value="">بدون پروژه</option>' +
+    d.projects.map(p=>`<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('');
+  const sel3 = $('#cd-project');
+  if(sel3) sel3.innerHTML = '<option value="">بدون پروژه</option>' +
+    d.projects.map(p=>`<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('');
+  const sel4 = $('#cg-project');
+  if(sel4) sel4.innerHTML = '<option value="">بدون پروژه</option>' +
     d.projects.map(p=>`<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('');
   return d.projects;
 }
@@ -909,7 +1259,40 @@ async function openProject(slug){
     html+=`<div class="sep"></div><div class="muted-s" style="margin-bottom:6px;font-weight:700">🧭 تصمیم‌ها</div>`;
     html+=d.decisions.map(x=>`<div class="muted-s">• ${esc(x.problem)} → ${esc(x.decision||'ثبت شده')}</div>`).join('');
   }
+
+  // Google data section — fetch async after rendering base dossier
+  html+=`<div class="sep"></div><div id="ps-google"><div class="muted-s" style="font-weight:700">🔍 داده گوگل</div><div class="sk" style="height:60px;margin-top:8px"></div></div>`;
+
   $('#ps-body').innerHTML=html;
+
+  // Load Google data for this project in background
+  (async()=>{
+    try{
+      const gData = await api('/api/projects/'+encodeURIComponent(slug)+'/google');
+      const g = gData.google;
+      let gh = `<div class="muted-s" style="font-weight:700">🔍 داده گوگل</div>`;
+      if(g.gsc && g.gsc.totals){
+        const tot = g.gsc.totals;
+        gh += `<div class="stats" style="margin:10px 0"><div class="stat"><div class="n">${fa(Math.round(tot.clicks||0))}</div><div class="l">کلیک</div></div><div class="stat"><div class="n">${Charts.compact(Math.round(tot.impressions||0))}</div><div class="l">نمایش</div></div><div class="stat"><div class="n">${fa((tot.ctr*100||0).toFixed(1))}٪</div><div class="l">CTR</div></div></div>`;
+        if(g.gsc.top_queries && g.gsc.top_queries.length){
+          gh += `<div class="muted-s" style="margin:8px 0 4px">کوئری‌های برتر:</div><div class="list">`+g.gsc.top_queries.slice(0,5).map(q=>`<div class="item"><div class="t">${esc((q.keys||[])[0]||'—')}</div><div class="meta"><span>${fa(Math.round(q.clicks||0))} کلیک</span></div></div>`).join('')+`</div>`;
+        }
+      } else {
+        gh += `<div class="muted-s">اتصال GSC تنظیم نشده یا داده‌ای نیست.</div>`;
+      }
+      if(g.ga4 && g.ga4.totals){
+        const tot = g.ga4.totals;
+        gh += `<div class="stats" style="margin:10px 0"><div class="stat"><div class="n">${fa(tot.sessions||'—')}</div><div class="l">سشن</div></div><div class="stat"><div class="n">${fa(tot.totalUsers||'—')}</div><div class="l">کاربر</div></div></div>`;
+      }
+      const el = document.getElementById('ps-google');
+      if(el) el.innerHTML = gh;
+    }catch(e){
+      const el = document.getElementById('ps-google');
+      if(el) el.innerHTML = `<div class="muted-s" style="font-weight:700">🔍 داده گوگل</div><div class="muted-s">${esc(e.message)}</div>`;
+    }
+  })();
+
+  return;
 }
 
 /* ---------- approvals ---------- */
@@ -1177,9 +1560,1573 @@ async function removeConn(id){
   }catch(e){ toast('خطا: '+e.message,'err'); }
 }
 
+
+/* ---------- morning report (PM Agent §11) ---------- */
+async function openMorningReport(){
+  $('#morningBack').classList.add('open');
+  $('#morningBody').innerHTML = skeleton(4);
+  try{
+    const r = await api('/api/morning');
+    const rep = r.report;
+    const d = rep.date;
+    let h = `<div class="muted-s" style="margin-bottom:10px">📅 ${esc(d.jalali_str)} — ${esc(d.gregorian)} — ${esc(d.tehran_time)}</div>`;
+    h += `<div class="stats" style="margin-bottom:12px">
+      <div class="stat ${rep.counts.overdue_tasks?'hot':''}"><div class="n">${fa(rep.counts.overdue_tasks)}</div><div class="l">معوق</div></div>
+      <div class="stat"><div class="n">${fa(rep.counts.due_today)}</div><div class="l">امروز</div></div>
+      <div class="stat ${rep.counts.hot_tasks?'warn':''}"><div class="n">${fa(rep.counts.hot_tasks)}</div><div class="l">فوری</div></div>
+      <div class="stat ${rep.counts.pending_approvals?'hot':''}"><div class="n">${fa(rep.counts.pending_approvals)}</div><div class="l">تأیید</div></div>
+    </div>`;
+
+    if(rep.overdue_tasks && rep.overdue_tasks.length){
+      h += `<div class="muted-s" style="font-weight:700;margin:10px 0 6px">⚠️ معوق</div><div class="list">`+
+        rep.overdue_tasks.slice(0,5).map(t=>`<div class="item hot"><div class="t">${esc(t.title)}</div><div class="meta">${pBadge(t.project_name)}${prBadge(t.priority)}</div></div>`).join('')+`</div>`;
+    }
+    if(rep.due_today && rep.due_today.length){
+      h += `<div class="muted-s" style="font-weight:700;margin:10px 0 6px">📅 امروز</div><div class="list">`+
+        rep.due_today.slice(0,5).map(t=>`<div class="item"><div class="t">${esc(t.title)}</div><div class="meta">${pBadge(t.project_name)}${prBadge(t.priority)}</div></div>`).join('')+`</div>`;
+    }
+    if(rep.prioritized_tasks && rep.prioritized_tasks.length){
+      h += `<div class="muted-s" style="font-weight:700;margin:10px 0 6px">🎯 اولویت‌بندی هوشمند</div><div class="list">`+
+        rep.prioritized_tasks.slice(0,8).map((t,i)=>`<div class="item"><div class="top"><div class="t">${fa(i+1)}. ${esc(t.title)}</div><span class="badge b-normal">${fa(t._priority_score)}</span></div><div class="meta">${pBadge(t.project_name)}${prBadge(t.priority)}${t._due_jalali?`<span>${esc(t._due_jalali)}</span>`:''}</div></div>`).join('')+`</div>`;
+    }
+    if(rep.pending_approvals && rep.pending_approvals.length){
+      h += `<div class="muted-s" style="font-weight:700;margin:10px 0 6px">🔐 صف تأیید</div><div class="list">`+
+        rep.pending_approvals.slice(0,5).map(a=>`<div class="item"><div class="t">${esc(a.title)}</div><div class="meta"><span>${esc(a.risk)}</span></div></div>`).join('')+`</div>`;
+    }
+    if(rep.crm_overdue && rep.crm_overdue.length){
+      h += `<div class="muted-s" style="font-weight:700;margin:10px 0 6px">👥 پیگیری CRM معوق</div><div class="list">`+
+        rep.crm_overdue.slice(0,5).map(f=>`<div class="item"><div class="t">${esc(f.contact_name)} — ${esc(f.summary)}</div></div>`).join('')+`</div>`;
+    }
+    if(rep.crm_followups && rep.crm_followups.length){
+      h += `<div class="muted-s" style="font-weight:700;margin:10px 0 6px">📞 پیگیری‌های پیش رو</div><div class="list">`+
+        rep.crm_followups.slice(0,5).map(f=>`<div class="item"><div class="t">${esc(f.contact_name)} — ${esc(f.summary)}</div></div>`).join('')+`</div>`;
+    }
+    h += `<div class="sep"></div><div class="muted-s">برای گزارش کامل‌تر، تب‌های تسک‌ها، CRM و اعلان‌ها را ببین.</div>`;
+    $('#morningBody').innerHTML = h;
+    // Update jalali date in header too
+    if($('#jalaliDate')) $('#jalaliDate').textContent = d.jalali_str;
+  }catch(e){
+    $('#morningBody').innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+function closeMorningReport(){ $('#morningBack').classList.remove('open'); }
+
+/* ---------- CRM (§14) ---------- */
+let currentCrmFilter='contacts';
+async function loadCrm(f){
+  currentCrmFilter = f || currentCrmFilter;
+  document.querySelectorAll('#crmSeg button').forEach(b=>b.classList.toggle('on', b.dataset.f===currentCrmFilter));
+  const list=$('#crmList');
+  list.innerHTML = skeleton(4);
+  try{
+    if(currentCrmFilter==='contacts'){
+      const data = await api('/api/crm/contacts?limit=50');
+      const items = data.contacts;
+      $('#crmCount').textContent = fa(items.length)+' مخاطب';
+      if(!items.length){ list.innerHTML = emptyState('👥','مخاطبی ثبت نشده'); return; }
+      list.innerHTML = items.map(c=>`<div class="item" onclick="openCrmDetail('${esc(c.contact_uid)}')">
+        <div class="top"><div class="t">${esc(c.name)}${c.company?' — '+esc(c.company):''}</div><span class="badge b-status">${esc(c.status)}</span></div>
+        <div class="meta">${c.phone?`<span>📞 ${esc(c.phone)}</span>`:''}${c.email?`<span>✉️ ${esc(c.email)}</span>`:''}${pBadge(c.project_name)}</div>
+        ${c.notes?`<div class="muted-s">${esc(c.notes.slice(0,80))}</div>`:''}
+      </div>`).join('');
+    } else if(currentCrmFilter==='deals'){
+      const data = await api('/api/crm/deals?limit=50');
+      const items = data.deals;
+      $('#crmCount').textContent = fa(items.length)+' معامله';
+      if(!items.length){ list.innerHTML = emptyState('💼','معامله‌ای ثبت نشده'); return; }
+      const stageLabels={lead:'سرنخ',qualified:'واجد شرایط',proposal:'پیشنهاد',negotiation:'مذاکره',won:'برنده',lost:'باخته'};
+      list.innerHTML = items.map(d=>`<div class="item">
+        <div class="top"><div class="t">${esc(d.title)}</div><span class="badge ${d.stage==='won'?'b-done':d.stage==='lost'?'b-urgent':'b-normal'}">${esc(stageLabels[d.stage]||d.stage)}</span></div>
+        <div class="meta"><span>${Charts.compact(d.amount)} ${esc(d.currency)}</span><span>${fa(d.probability)}٪ احتمال</span>${pBadge(d.project_name||d.contact_name)}</div>
+        ${d.notes?`<div class="muted-s">${esc(d.notes.slice(0,80))}</div>`:''}
+      </div>`).join('');
+    } else if(currentCrmFilter==='followups'){
+      const data = await api('/api/crm/interactions?upcoming=1&days=14');
+      const items = data.interactions;
+      $('#crmCount').textContent = fa(items.length)+' پیگیری';
+      if(!items.length){ list.innerHTML = emptyState('📅','پیگیری پیش رویی نیست'); return; }
+      list.innerHTML = items.map(f=>{
+        const isOverdue = f.next_follow_up_at && f.next_follow_up_at < (Date.now()/1000);
+        return `<div class="item ${isOverdue?'hot':''}">
+          <div class="top"><div class="t">${esc(f.contact_name)} — ${esc(f.summary)}</div>${isOverdue?'<span class="badge b-urgent">معوق</span>':''}</div>
+          <div class="meta"><span>${esc(f.type)}</span><span>${f.next_follow_up_at?timeAgo(f.next_follow_up_at):''}</span>${pBadge(f.project_name)}</div>
+        </div>`;
+      }).join('');
+    }
+  }catch(e){
+    list.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+
+function openCrmContactSheet(){
+  if(!window._projects) loadProjects();
+  const sel=$('#cc-project');
+  if(sel && window._projects){
+    sel.innerHTML = '<option value="">بدون پروژه</option>' + window._projects.map(p=>`<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('');
+  }
+  $('#crmContactBack').classList.add('open');
+}
+function closeCrmContactSheet(){ $('#crmContactBack').classList.remove('open'); }
+async function saveCrmContact(){
+  const btn=$('#cc-save');
+  const name=$('#cc-name').value.trim();
+  if(!name){ toast('نام لازم است'); return; }
+  const payload={
+    name,
+    company:$('#cc-company').value.trim()||null,
+    role:$('#cc-role').value.trim()||null,
+    phone:$('#cc-phone').value.trim()||null,
+    email:$('#cc-email').value.trim()||null,
+    telegram:$('#cc-telegram').value.trim()||null,
+    status:$('#cc-status').value,
+    project_slug:$('#cc-project').value||null,
+    notes:$('#cc-notes').value.trim()||null,
+  };
+  btn.disabled=true; btn.innerHTML='<span class="loader"></span>';
+  try{
+    const r=await api('/api/crm/contacts',{method:'POST',body:JSON.stringify(payload)});
+    if(r.executed) toast('✅ مخاطب ثبت شد','ok');
+    else toast('⏳ درخواست ثبت شد و منتظر تأیید است');
+    closeCrmContactSheet();
+    await loadCrm('contacts');
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+  finally{ btn.disabled=false; btn.textContent='ذخیره'; }
+}
+
+function openCrmDealSheet(){
+  if(!window._projects) loadProjects();
+  const sel=$('#cd-project');
+  if(sel && window._projects){
+    sel.innerHTML = '<option value="">بدون پروژه</option>' + window._projects.map(p=>`<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('');
+  }
+  $('#crmDealBack').classList.add('open');
+}
+function closeCrmDealSheet(){ $('#crmDealBack').classList.remove('open'); }
+async function saveCrmDeal(){
+  const btn=$('#cd-save');
+  const title=$('#cd-title').value.trim();
+  if(!title){ toast('عنوان لازم است'); return; }
+  const payload={
+    title,
+    amount:parseFloat($('#cd-amount').value)||0,
+    currency:$('#cd-currency').value,
+    stage:$('#cd-stage').value,
+    probability:parseInt($('#cd-prob').value)||50,
+    contact_uid:$('#cd-contact').value.trim()||null,
+    project_slug:$('#cd-project').value||null,
+    notes:$('#cd-notes').value.trim()||null,
+  };
+  btn.disabled=true; btn.innerHTML='<span class="loader"></span>';
+  try{
+    const r=await api('/api/crm/deals',{method:'POST',body:JSON.stringify(payload)});
+    if(r.executed) toast('✅ معامله ثبت شد','ok');
+    else toast('⏳ درخواست ثبت شد');
+    closeCrmDealSheet();
+    await loadCrm('deals');
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+  finally{ btn.disabled=false; btn.textContent='ذخیره'; }
+}
+
+async function openCrmDetail(uid){
+  $('#crmDetailBack').classList.add('open');
+  $('#crmDetailBody').innerHTML = skeleton(4);
+  try{
+    const data = await api('/api/crm/contacts/'+encodeURIComponent(uid));
+    const c=data.contact;
+    let h=`<div class="muted-s" style="margin-bottom:8px">${pBadge(c.project_id||'')} ${esc(c.status)} • ${c.company?esc(c.company):''}</div>`;
+    h+=`<div class="grid2"><div class="field"><label>تلفن</label><div class="muted-s">${esc(c.phone||'—')}</div></div><div class="field"><label>ایمیل</label><div class="muted-s">${esc(c.email||'—')}</div></div></div>`;
+    h+=`<div class="field"><label>تلگرام</label><div class="muted-s">${esc(c.telegram||'—')}</div></div>`;
+    if(c.notes) h+=`<div class="field"><label>یادداشت</label><div class="muted-s">${esc(c.notes)}</div></div>`;
+    h+=`<div class="sep"></div><div class="muted-s" style="font-weight:700">📞 تعاملات (${fa(data.interactions.length)})</div>`;
+    h+= data.interactions.length ? `<div class="list" style="margin-top:8px">`+data.interactions.map(i=>`<div class="item"><div class="t">${esc(i.summary)}</div><div class="meta"><span>${esc(i.type)}</span><span>${timeAgo(i.created_at)}</span></div>${i.next_action?`<div class="muted-s">بعدی: ${esc(i.next_action)}</div>`:''}</div>`).join('')+`</div>` : `<div class="muted-s">تعاملی ثبت نشده</div>`;
+    h+=`<div class="sep"></div><div class="muted-s" style="font-weight:700">💼 معاملات (${fa(data.deals.length)})</div>`;
+    h+= data.deals.length ? `<div class="list" style="margin-top:8px">`+data.deals.map(d=>`<div class="item"><div class="t">${esc(d.title)} — ${esc(d.stage)}</div><div class="meta"><span>${Charts.compact(d.amount)} ${esc(d.currency)}</span></div></div>`).join('')+`</div>` : `<div class="muted-s">معامله‌ای نیست</div>`;
+    $('#crmDetailBody').innerHTML = h;
+    $('#crmDetailTitle').textContent = '👥 '+c.name;
+  }catch(e){
+    $('#crmDetailBody').innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+function closeCrmDetail(){ $('#crmDetailBack').classList.remove('open'); }
+
+/* ---------- Notifications (§18) ---------- */
+async function loadNotifications(){
+  const list=$('#notifList');
+  const sumEl=$('#notifSummary');
+  const countEl=$('#notifCount');
+  if(list) list.innerHTML = skeleton(4);
+  try{
+    const data = await api('/api/notifications');
+    const live = data.live || [];
+    const summary = data.summary || {};
+    if(countEl) countEl.textContent = fa(live.length)+' مورد';
+    if(sumEl){
+      sumEl.innerHTML = `<div class="stats">
+        <div class="stat ${summary.high_priority?'hot':''}"><div class="n">${fa(summary.high_priority||0)}</div><div class="l">بحرانی</div></div>
+        <div class="stat"><div class="n">${fa(summary.total||0)}</div><div class="l">کل</div></div>
+        <div class="stat"><div class="n">${fa(summary.by_type?Object.keys(summary.by_type).length:0)}</div><div class="l">نوع</div></div>
+      </div>`;
+    }
+    if(!live.length){
+      if(list) list.innerHTML = emptyState('✅','هیچ اعلان فعالی نیست');
+      // hide preview card too
+      if($('#notifPreviewCard')) $('#notifPreviewCard').style.display='none';
+      return;
+    }
+    if(list){
+      list.innerHTML = live.map(n=>{
+        const sev = n.severity;
+        const badge = sev==='high' ? 'b-urgent' : sev==='medium' ? 'b-high' : 'b-normal';
+        const icon = sev==='high' ? '🔴' : sev==='medium' ? '🟡' : '🟢';
+        return `<div class="item ${sev==='high'?'hot':''}">
+          <div class="top"><div class="t">${icon} ${esc(n.title)}</div><span class="badge ${badge}">${esc(sev)}</span></div>
+          ${n.body?`<div class="muted-s">${esc(n.body)}</div>`:''}
+          <div class="meta"><span>${esc(n.type)}</span><span>${n.created_at?timeAgo(n.created_at):''}</span></div>
+        </div>`;
+      }).join('');
+    }
+    // Also update preview card in overview
+    const preview = $('#notifPreview');
+    const previewCard = $('#notifPreviewCard');
+    const previewCount = $('#notifPreviewCount');
+    if(preview && previewCard){
+      const critical = live.filter(x=>x.severity==='high').slice(0,4);
+      if(critical.length){
+        previewCard.style.display='block';
+        if(previewCount) previewCount.textContent = fa(critical.length)+' بحرانی';
+        preview.innerHTML = critical.map(n=>`<div class="item hot"><div class="t">${esc(n.title)}</div><div class="muted-s">${esc(n.body||'')}</div></div>`).join('');
+      } else {
+        previewCard.style.display='none';
+      }
+    }
+  }catch(e){
+    if(list) list.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+async function markAllNotifRead(){
+  try{
+    await api('/api/notifications/read-all',{method:'POST'});
+    toast('همه خوانده شد','ok');
+    await loadNotifications();
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+async function loadNotifPreview(){
+  try{
+    const data = await api('/api/notifications');
+    const live = data.live || [];
+    const critical = live.filter(x=>x.severity==='high').slice(0,4);
+    const previewCard = $('#notifPreviewCard');
+    if(!previewCard) return;
+    if(critical.length){
+      previewCard.style.display='block';
+      $('#notifPreviewCount').textContent = fa(critical.length)+' بحرانی';
+      $('#notifPreview').innerHTML = critical.map(n=>`<div class="item hot"><div class="t">${esc(n.title)}</div></div>`).join('');
+    } else {
+      previewCard.style.display='none';
+    }
+  }catch(e){}
+}
+
+
+/* ---------- Content Agent (§9) ---------- */
+let currentContentFilter='all';
+async function loadContent(f){
+  currentContentFilter = f || currentContentFilter;
+  document.querySelectorAll('#contentSeg button').forEach(b=>b.classList.toggle('on', b.dataset.f===currentContentFilter));
+  const list=$('#contentList');
+  const statsEl=$('#contentStats');
+  const countEl=$('#contentCount');
+  list.innerHTML = skeleton(4);
+  try{
+    const data = await api('/api/content/drafts?limit=50');
+    let items = data.drafts;
+    if(currentContentFilter!=='all'){
+      items = items.filter(d=>d.status===currentContentFilter);
+    }
+    if(countEl) countEl.textContent = fa(items.length)+' پیش‌نویس';
+    // Stats
+    try{
+      const sData = await api('/api/content/stats');
+      const s = sData.stats;
+      if(statsEl){
+        statsEl.innerHTML = `<div class="stats">
+          <div class="stat"><div class="n">${fa(s.total)}</div><div class="l">کل</div></div>
+          <div class="stat"><div class="n">${fa(s.by_status.draft||0)}</div><div class="l">پیش‌نویس</div></div>
+          <div class="stat ${s.by_status.pending_approval?'warn':''}"><div class="n">${fa(s.by_status.pending_approval||0)}</div><div class="l">منتظر تأیید</div></div>
+          <div class="stat ok"><div class="n">${fa(s.by_status.published||0)}</div><div class="l">منتشرشده</div></div>
+        </div>`;
+      }
+    }catch(e){}
+
+    if(!items.length){
+      list.innerHTML = emptyState('📝','پیش‌نویسی نیست — یکی تولید کن');
+      return;
+    }
+    list.innerHTML = items.map(d=>{
+      const statusLabels={draft:'پیش‌نویس',pending_approval:'منتظر تأیید',approved:'تأییدشده',published:'منتشرشده',rejected:'ردشده',archived:'آرشیو'};
+      const badge = d.status==='published' ? 'b-done' : d.status==='pending_approval' ? 'b-high' : d.status==='draft' ? 'b-normal' : 'b-status';
+      return `<div class="item" onclick="openContentDetail('${esc(d.draft_uid)}')">
+        <div class="top"><div class="t">${esc(d.title)}</div><span class="badge ${badge}">${esc(statusLabels[d.status]||d.status)}</span></div>
+        <div class="meta"><span>${fa(d.word_count)} کلمه</span>${d.seo_score?`<span>سئو ${fa(d.seo_score)}</span>`:''}${pBadge(d.project_name)}</div>
+        ${d.excerpt?`<div class="muted-s">${esc(d.excerpt.slice(0,100))}…</div>`:''}
+      </div>`;
+    }).join('');
+  }catch(e){
+    list.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+
+function openContentGenerateSheet(){
+  if(!window._projects) loadProjects();
+  const sel=$('#cg-project');
+  if(sel && window._projects){
+    sel.innerHTML = '<option value="">بدون پروژه</option>' + window._projects.map(p=>`<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('');
+  }
+  $('#contentGenBack').classList.add('open');
+}
+function closeContentGenerateSheet(){ $('#contentGenBack').classList.remove('open'); }
+
+async function saveContentGenerate(){
+  const btn=$('#cg-save');
+  const topic=$('#cg-topic').value.trim();
+  if(!topic){ toast('موضوع لازم است'); return; }
+  const payload={
+    topic,
+    project_slug:$('#cg-project').value||null,
+    target_words:parseInt($('#cg-words').value)||2000,
+  };
+  btn.disabled=true; btn.innerHTML='<span class="loader"></span> در حال تولید…';
+  try{
+    const r=await api('/api/content/generate',{method:'POST',body:JSON.stringify(payload)});
+    if(r.executed) toast('✅ مقاله تولید شد','ok');
+    else toast('⏳ درخواست ثبت شد و منتظر تأیید است');
+    closeContentGenerateSheet();
+    await loadContent();
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+  finally{ btn.disabled=false; btn.textContent='تولید محتوا'; }
+}
+
+async function openContentDetail(uid){
+  $('#contentDetailBack').classList.add('open');
+  $('#contentDetailBody').innerHTML = skeleton(4);
+  try{
+    const data = await api('/api/content/drafts/'+encodeURIComponent(uid));
+    const d=data.draft;
+    let h=`<div class="muted-s" style="margin-bottom:8px">${pBadge(d.project_id||'')} ${esc(d.status)} • ${fa(d.word_count)} کلمه ${d.seo_score?`• سئو ${fa(d.seo_score)}`:''}</div>`;
+    if(d.slug_en) h+=`<div class="field"><label>Slug EN</label><div class="muted-s">${esc(d.slug_en)}</div></div>`;
+    if(d.meta_title) h+=`<div class="field"><label>Meta Title</label><div class="muted-s">${esc(d.meta_title)}</div></div>`;
+    if(d.meta_description) h+=`<div class="field"><label>Meta Description</label><div class="muted-s">${esc(d.meta_description)}</div></div>`;
+    if(d.focus_keyword) h+=`<div class="field"><label>Focus Keyword</label><div class="muted-s">${esc(d.focus_keyword)}</div></div>`;
+    if(d.cannibalization && d.cannibalization.length){
+      h+=`<div class="field"><label>⚠️ Cannibalization</label><div class="muted-s">${d.cannibalization.map(c=>`${esc(c.title)} (${fa(c.similarity)})`).join('<br>')}</div></div>`;
+    }
+    if(d.outline && d.outline.length){
+      h+=`<div class="field"><label>Outline</label><div class="muted-s">${d.outline.map((o,i)=>`${fa(i+1)}. ${esc(o)}`).join('<br>')}</div></div>`;
+    }
+    if(d.content){
+      const preview = d.content.slice(0,800);
+      h+=`<div class="field"><label>محتوا (پیش‌نمایش)</label><div class="muted-s" style="white-space:pre-wrap;max-height:300px;overflow:auto;background:rgba(0,0,0,.2);padding:10px;border-radius:10px">${esc(preview)}${d.content.length>800?'…':''}</div></div>`;
+    }
+    if(d.faq && d.faq.length){
+      h+=`<div class="field"><label>FAQ</label><div class="muted-s">${d.faq.map(f=>`<b>Q: ${esc(f.q||f.question||'')}</b><br>A: ${esc(f.a||f.answer||'')}`).join('<br><br>')}</div></div>`;
+    }
+    if(d.image_prompt) h+=`<div class="field"><label>Image Prompt</label><div class="muted-s">${esc(d.image_prompt)}</div></div>`;
+    if(d.cta) h+=`<div class="field"><label>CTA</label><div class="muted-s">${esc(d.cta)}</div></div>`;
+    if(d.wordpress_url) h+=`<div class="field"><label>WordPress</label><div class="muted-s"><a href="${esc(d.wordpress_url)}" target="_blank">${esc(d.wordpress_url)}</a></div></div>`;
+
+    h+=`<div class="sep"></div><div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn sm" onclick="seoAuditContent('${esc(d.draft_uid)}')">🔍 بررسی سئو</button>
+      <button class="btn sm ghost" onclick="publishContentDraft('${esc(d.draft_uid)}', true)">📤 پیش‌نویس وردپرس</button>
+      <button class="btn sm ghost" onclick="publishContentDraft('${esc(d.draft_uid)}', false)">🚀 انتشار نهایی (🔴)</button>
+      <button class="btn sm ghost" onclick="if(confirm('حذف شود؟')) deleteContentDraft('${esc(d.draft_uid)}')">🗑 حذف</button>
+    </div>`;
+
+    $('#contentDetailBody').innerHTML = h;
+    $('#contentDetailTitle').textContent = '📝 '+d.title;
+  }catch(e){
+    $('#contentDetailBody').innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+function closeContentDetail(){ $('#contentDetailBack').classList.remove('open'); }
+
+async function seoAuditContent(uid){
+  toast('در حال بررسی سئو…');
+  try{
+    const r=await api('/api/content/drafts/'+encodeURIComponent(uid)+'/seo-audit',{method:'POST'});
+    if(r.executed){
+      toast('✅ بررسی سئو انجام شد — امتیاز '+(r.audit?r.audit.score:'?'),'ok');
+      await openContentDetail(uid);
+    } else {
+      toast('⏳ درخواست بررسی ثبت شد');
+    }
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+
+async function publishContentDraft(uid, asDraft){
+  const action = asDraft ? 'پیش‌نویس وردپرس' : 'انتشار نهایی';
+  if(!confirm(action+' انجام شود؟'+(asDraft?'':' این اقدام 🔴 و نیاز به دو تأیید دارد.'))) return;
+  try{
+    const r=await api('/api/content/drafts/'+encodeURIComponent(uid)+'/publish',{method:'POST',body:JSON.stringify({as_draft:asDraft})});
+    if(r.executed) toast('✅ '+ (r.result||action+' انجام شد'),'ok');
+    else toast('⏳ درخواست ثبت شد و منتظر تأیید است');
+    await loadContent();
+    closeContentDetail();
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+
+async function deleteContentDraft(uid){
+  try{
+    const r=await api('/api/content/drafts/'+encodeURIComponent(uid),{method:'DELETE'});
+    if(r.executed) toast('🗑 حذف شد','ok');
+    else toast('⏳ درخواست حذف ثبت شد');
+    await loadContent();
+    closeContentDetail();
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+
+
+/* ---------- Google GSC + GA4 (§4, §5) ---------- */
+async function loadGoogleData(projectSlug){
+  const statusEl = $('#googleStatus');
+  const summaryEl = $('#googleSummary');
+  const queriesEl = $('#googleTopQueries');
+  if(statusEl) statusEl.textContent = 'در حال بارگذاری…';
+  if(summaryEl) summaryEl.innerHTML = skeleton(2,'sk-line');
+  if(queriesEl) queriesEl.innerHTML = '';
+  try{
+    let url = '/api/google/overview';
+    if(projectSlug) url = '/api/projects/'+encodeURIComponent(projectSlug)+'/google';
+    const r = await api(url);
+    const g = r.google;
+    if(statusEl) statusEl.textContent = 'متصل ✓';
+    let h = '';
+    if(g.gsc && g.gsc.totals){
+      const tot = g.gsc.totals;
+      h += `<div class="stats" style="margin-bottom:10px">
+        <div class="stat"><div class="n">${fa(Math.round(tot.clicks||0))}</div><div class="l">کلیک GSC</div></div>
+        <div class="stat"><div class="n">${Charts.compact(Math.round(tot.impressions||0))}</div><div class="l">نمایش</div></div>
+        <div class="stat"><div class="n">${fa((tot.ctr*100||0).toFixed(1))}٪</div><div class="l">CTR</div></div>
+        <div class="stat"><div class="n">${fa((tot.position||0).toFixed(1))}</div><div class="l">جایگاه</div></div>
+      </div>`;
+    }
+    if(g.ga4 && g.ga4.totals){
+      const tot = g.ga4.totals;
+      h += `<div class="stats" style="margin-bottom:10px">
+        <div class="stat"><div class="n">${fa(tot.sessions||'—')}</div><div class="l">سشن GA4</div></div>
+        <div class="stat"><div class="n">${fa(tot.totalUsers||'—')}</div><div class="l">کاربر</div></div>
+        <div class="stat"><div class="n">${fa(tot.screenPageViews||'—')}</div><div class="l">بازدید</div></div>
+      </div>`;
+    }
+    if(!h) h = `<div class="muted-s">داده گوگل برای این پروژه هنوز بارگذاری نشده یا اتصال تنظیم نشده.</div>`;
+    if(summaryEl) summaryEl.innerHTML = h;
+
+    // Daily trend chart
+    const dailyChartEl = document.getElementById('googleDailyChart');
+    if(dailyChartEl){
+      if(g.gsc && g.gsc.daily && g.gsc.daily.dates && g.gsc.daily.dates.length){
+        const daily = g.gsc.daily;
+        const labels = daily.dates.map(d=>d.slice(5)); // MM-DD
+        dailyChartEl.innerHTML = `<div class="muted-s" style="font-weight:700;margin-bottom:6px">📈 روند روزانه کلیک / نمایش (۲۸ روز)</div>` +
+          Charts.lineChart({
+            labels: labels,
+            height: 160,
+            series: [
+              {data: daily.clicks, color: '#6c8cff'},
+              {data: daily.impressions.map(v=>Math.round(v/10)), color: '#36e2b0'},
+            ]
+          }) + `<div class="legend"><span><i style="background:#6c8cff"></i>کلیک</span><span><i style="background:#36e2b0"></i>نمایش (÷۱۰)</span></div>`;
+      } else if(ANALYTICS && ANALYTICS.gsc_trend && ANALYTICS.gsc_trend.gsc && ANALYTICS.gsc_trend.gsc.dates && ANALYTICS.gsc_trend.gsc.dates.length){
+        const daily = ANALYTICS.gsc_trend.gsc;
+        const labels = daily.dates_jalali ? daily.dates_jalali.map(d=>d.slice(5)) : daily.dates.map(d=>d.slice(5));
+        dailyChartEl.innerHTML = `<div class="muted-s" style="font-weight:700;margin-bottom:6px">📈 روند روزانه (ذخیره‌شده)</div>` +
+          Charts.lineChart({
+            labels: labels,
+            height: 160,
+            series: [
+              {data: daily.clicks, color: '#6c8cff'},
+              {data: daily.impressions.map(v=>Math.round(v/10)), color: '#36e2b0'},
+            ]
+          });
+      } else {
+        dailyChartEl.innerHTML = '';
+      }
+    }
+
+    // Top queries
+    if(queriesEl){
+      let qh = '';
+      if(g.gsc && g.gsc.top_queries && g.gsc.top_queries.length){
+        qh += `<div class="muted-s" style="font-weight:700;margin:8px 0 6px">🔍 کوئری‌های برتر</div>`;
+        qh += g.gsc.top_queries.slice(0,6).map(q=>{
+          const keys = q.keys || [];
+          return `<div class="item"><div class="t">${esc(keys[0]||'—')}</div><div class="meta"><span>${fa(Math.round(q.clicks||0))} کلیک</span><span>${fa(Math.round(q.impressions||0))} نمایش</span><span>جایگاه ${fa((q.position||0).toFixed(1))}</span></div></div>`;
+        }).join('');
+      }
+      if(g.gsc && g.gsc.top_pages && g.gsc.top_pages.length){
+        qh += `<div class="muted-s" style="font-weight:700;margin:12px 0 6px">📄 صفحات برتر</div>`;
+        qh += g.gsc.top_pages.slice(0,5).map(p=>{
+          const keys = p.keys || [];
+          const page = keys[0]||'';
+          return `<div class="item"><div class="t" style="font-size:12px;direction:ltr;text-align:left">${esc(page.slice(0,80))}</div><div class="meta"><span>${fa(Math.round(p.clicks||0))} کلیک</span></div></div>`;
+        }).join('');
+      }
+      // Device breakdown
+      if(g.gsc && g.gsc.devices && g.gsc.devices.length){
+        qh += `<div class="muted-s" style="font-weight:700;margin:12px 0 6px">📱 تفکیک دستگاه</div>`;
+        qh += g.gsc.devices.map(d=>{
+          const dev = (d.keys||[])[0]||'';
+          const label = {DESKTOP:'دسکتاپ',MOBILE:'موبایل',TABLET:'تبلت'}[dev]||dev;
+          return `<div class="item"><div class="t">${esc(label)}</div><div class="meta"><span>${fa(Math.round(d.clicks||0))} کلیک</span><span>CTR ${((d.ctr||0)*100).toFixed(1)}٪</span></div></div>`;
+        }).join('');
+      }
+      queriesEl.innerHTML = qh;
+    }
+
+    if(g.errors && g.errors.length){
+      if(summaryEl) summaryEl.innerHTML += `<div class="muted-s" style="color:#ff9b9b;margin-top:8px">${esc(g.errors.join(' • '))}</div>`;
+    }
+
+  }catch(e){
+    if(statusEl) statusEl.textContent = 'تنظیم نشده';
+    if(summaryEl){
+      if(e.message && e.message.includes('not configured')){
+        summaryEl.innerHTML = `<div class="empty">🔌 اتصال گوگل تنظیم نشده<br><span class="muted-s">از تب اتصال‌ها → Google Search Console و GA4 را وصل کن.<br>راهنما: <code>python -m app.tools.google_oauth</code></span></div>`;
+      } else {
+        summaryEl.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+      }
+    }
+  }
+}
+
+
+/* ---------- Business Analyst + Sales Agent (§12, §13) ---------- */
+async function loadBusinessAnalysis(projectSlug){
+  const scoreEl = $('#businessScore');
+  const summaryEl = $('#businessSummary');
+  const insightsEl = $('#businessInsights');
+  if(summaryEl) summaryEl.innerHTML = skeleton(2,'sk-line');
+  if(insightsEl) insightsEl.innerHTML = '';
+  try{
+    let url = '/api/business/analysis';
+    if(projectSlug) url = '/api/projects/'+encodeURIComponent(projectSlug)+'/business';
+    const r = await api(url);
+    const a = r.analysis;
+    if(scoreEl) scoreEl.textContent = fa(a.health_score)+'٪ '+esc(a.health_label);
+    let h = `<div class="stats" style="margin-bottom:10px">
+      <div class="stat ${a.health_score<50?'hot':a.health_score<70?'warn':''}"><div class="n">${fa(a.health_score)}٪</div><div class="l">سلامت</div></div>
+      <div class="stat"><div class="n">${fa(a.counts.open_tasks||0)}</div><div class="l">تسک باز</div></div>
+      <div class="stat"><div class="n">${fa(a.counts.overdue_tasks||0)}</div><div class="l">معوق</div></div>
+      <div class="stat"><div class="n">${fa(a.counts.deals_total||0)}</div><div class="l">معامله</div></div>
+    </div>`;
+    if(summaryEl) summaryEl.innerHTML = h;
+
+    if(insightsEl){
+      let ih = '';
+      if(a.insights && a.insights.length){
+        ih += a.insights.slice(0,5).map(ins=>{
+          const sev = ins.severity;
+          const badge = sev==='high' ? 'b-urgent' : sev==='medium' ? 'b-high' : 'b-normal';
+          const icon = sev==='high' ? '🔴' : sev==='medium' ? '🟡' : '🟢';
+          return `<div class="item ${sev==='high'?'hot':''}"><div class="top"><div class="t">${icon} ${esc(ins.title)}</div><span class="badge ${badge}">${esc(sev)}</span></div><div class="muted-s">${esc(ins.detail||'')}</div></div>`;
+        }).join('');
+      }
+      if(a.recommendations && a.recommendations.length){
+        ih += `<div class="muted-s" style="font-weight:700;margin:10px 0 6px">💡 پیشنهاد اقدام:</div>`;
+        ih += a.recommendations.slice(0,4).map((rec,i)=>`<div class="muted-s">${fa(i+1)}. ${esc(rec)}</div>`).join('');
+      }
+      insightsEl.innerHTML = ih || `<div class="muted-s">یافته‌ای نیست — همه چیز مرتب است ✅</div>`;
+    }
+
+  }catch(e){
+    if(summaryEl) summaryEl.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+
+async function loadSalesPipeline(projectSlug){
+  const valueEl = $('#salesValue');
+  const summaryEl = $('#salesSummary');
+  const listEl = $('#salesList');
+  if(summaryEl) summaryEl.innerHTML = skeleton(2,'sk-line');
+  if(listEl) listEl.innerHTML = '';
+  try{
+    let url = '/api/sales/pipeline';
+    if(projectSlug) url = '/api/projects/'+encodeURIComponent(projectSlug)+'/sales';
+    const r = await api(url);
+    const p = r.pipeline;
+    if(valueEl) valueEl.textContent = Charts.compact(p.pipeline_value)+' IRT';
+    let h = `<div class="stats" style="margin-bottom:10px">
+      <div class="stat"><div class="n">${fa(p.total_deals)}</div><div class="l">معامله</div></div>
+      <div class="stat"><div class="n">${Charts.compact(p.pipeline_value)}</div><div class="l">Pipeline</div></div>
+      <div class="stat"><div class="n">${Charts.compact(p.weighted_value)}</div><div class="l">وزنی</div></div>
+      <div class="stat ${p.stale_deals && p.stale_deals.length?'warn':''}"><div class="n">${fa(p.stale_deals? p.stale_deals.length:0)}</div><div class="l">راکد</div></div>
+    </div>`;
+    // Stage breakdown
+    const stageLabels={lead:'سرنخ',qualified:'واجد شرایط',proposal:'پیشنهاد',negotiation:'مذاکره',won:'برنده',lost:'باخته'};
+    if(p.by_stage){
+      h += `<div class="muted-s" style="margin:8px 0 6px">تفکیک مرحله:</div><div class="list">`;
+      Object.entries(p.by_stage).forEach(([stage,count])=>{
+        if(count>0) h+=`<div class="muted-s">${esc(stageLabels[stage]||stage)}: ${fa(count)}</div>`;
+      });
+      h+=`</div>`;
+    }
+    if(summaryEl) summaryEl.innerHTML = h;
+
+    if(listEl){
+      let lh = '';
+      if(p.stale_deals && p.stale_deals.length){
+        lh += `<div class="muted-s" style="font-weight:700;margin:8px 0 6px">⚠️ راکد:</div>`;
+        lh += p.stale_deals.slice(0,4).map(d=>`<div class="item"><div class="t">${esc(d.title)} — ${fa(d.days_stale)} روز راکد</div></div>`).join('');
+      }
+      if(p.closing_soon && p.closing_soon.length){
+        lh += `<div class="muted-s" style="font-weight:700;margin:10px 0 6px">📅 بستن زودهنگام:</div>`;
+        lh += p.closing_soon.slice(0,4).map(d=>`<div class="item"><div class="t">${esc(d.title)} — ${fa(d.days_to_close)} روز دیگر</div></div>`).join('');
+      }
+      if(p.next_actions && p.next_actions.length){
+        lh += `<div class="muted-s" style="font-weight:700;margin:10px 0 6px">🎯 اقدام بعدی:</div>`;
+        lh += p.next_actions.slice(0,5).map(na=>`<div class="item"><div class="t">${esc(na.title)}: ${esc(na.action)}</div></div>`).join('');
+      }
+      listEl.innerHTML = lh || `<div class="muted-s">داده فروش نیست</div>`;
+    }
+
+  }catch(e){
+    if(summaryEl) summaryEl.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+
+
+/* ---------- Financial — Monthly Income (redefined §15) ---------- */
+let currentFinancialFilter='current';
+async function loadFinancial(f){
+  currentFinancialFilter = f || currentFinancialFilter;
+  document.querySelectorAll('#financialSeg button').forEach(b=>b.classList.toggle('on', b.dataset.f===currentFinancialFilter));
+  const list=$('#financialList');
+  const statsEl=$('#financialStats');
+  const summaryEl=$('#financialSummary');
+  const monthEl=$('#financialMonth');
+  const contractsEl=$('#contractsList');
+  if(list) list.innerHTML = skeleton(4);
+  if(statsEl) statsEl.innerHTML = skeleton(2,'sk-card');
+  try{
+    const data = await api('/api/financial/summary');
+    const summary = data.summary;
+    const contracts = data.contracts || [];
+
+    if(monthEl) monthEl.textContent = summary.current_month || '';
+    if(statsEl){
+      statsEl.innerHTML = `<div class="stats">
+        <div class="stat ok"><div class="n">${Charts.compact(summary.total_paid)}</div><div class="l">وصولی</div></div>
+        <div class="stat"><div class="n">${Charts.compact(summary.total_expected)}</div><div class="l">کل انتظار</div></div>
+        <div class="stat ${summary.collection_rate<70?'warn':''}"><div class="n">${fa(summary.collection_rate)}٪</div><div class="l">نرخ وصول</div></div>
+        <div class="stat ${summary.overdue && summary.overdue.length?'hot':''}"><div class="n">${fa(summary.overdue?summary.overdue.length:0)}</div><div class="l">معوق</div></div>
+      </div>`;
+    }
+
+    if(summaryEl){
+      let h = '';
+      if(summary.months && summary.months.length){
+        h += `<div class="muted-s" style="font-weight:700;margin-bottom:6px">📊 ۶ ماه اخیر</div>`;
+        h += `<div class="chart-wrap">${Charts.barList({data: summary.months.slice(0,6).map(m=>({label: m.month_jalali, value: m.paid, color: m.paid_percent>=100 ? '#36e2b0' : m.paid_percent>=50 ? '#ffb454' : '#ff6b81'}))})}</div>`;
+      }
+      summaryEl.innerHTML = h;
+    }
+
+    if(contractsEl){
+      if(!contracts.length) contractsEl.innerHTML = emptyState('📋','پروژه فعالی نیست');
+      else {
+        contractsEl.innerHTML = contracts.map(c=>{
+          const curEmoji = {paid:'✅',pending:'⏳',overdue:'🔴',not_created:'➕'}[c.current_month_status] || '•';
+          return `<div class="item" onclick="loadFinancialDetail('${esc(c.slug)}')">
+            <div class="top"><div class="t">${curEmoji} ${esc(c.name)}</div><span class="badge ${c.overdue_count?'b-urgent':'b-normal'}">${c.overdue_count? fa(c.overdue_count)+' معوق' : 'مرتب'}</span></div>
+            <div class="meta"><span>میانگین قرارداد: ${Charts.compact(c.avg_contract)} IRT</span><span>ماه جاری: ${esc(c.current_month_status)}</span></div>
+          </div>`;
+        }).join('');
+      }
+    }
+
+    // Filtered list
+    let items = [];
+    if(currentFinancialFilter==='current'){
+      items = summary.current_month_incomes || [];
+    } else if(currentFinancialFilter==='overdue'){
+      items = summary.overdue || [];
+    } else if(currentFinancialFilter==='pending'){
+      items = summary.pending || [];
+    } else {
+      // all — fetch from /api/financial/incomes
+      const allData = await api('/api/financial/incomes?limit=50');
+      items = allData.incomes || [];
+    }
+
+    if(list){
+      if(!items.length){
+        list.innerHTML = emptyState('💰','موردی در این نما نیست');
+      } else {
+        list.innerHTML = items.map(inc=>{
+          const emoji = {paid:'✅',pending:'⏳',overdue:'🔴',cancelled:'❌',partial:'🟡'}[inc.status] || '•';
+          return `<div class="item ${inc.status==='overdue'?'hot':''}">
+            <div class="top"><div class="t">${emoji} ${esc(inc.project_name)} — ${esc(inc.month_jalali)}</div><span class="badge ${inc.status==='paid'?'b-done':inc.status==='overdue'?'b-urgent':'b-normal'}">${esc(inc.status)}</span></div>
+            <div class="meta"><span>${Charts.compact(inc.amount)} ${esc(inc.currency)}</span><span>${inc.paid_at? 'پرداخت: '+timeAgo(inc.paid_at) : 'موعد: '+(inc.due_at?timeAgo(inc.due_at):'—')}</span></div>
+            ${inc.notes?`<div class="muted-s">${esc(inc.notes.slice(0,80))}</div>`:''}
+            <div style="display:flex;gap:6px;margin-top:6px">
+              ${inc.status!=='paid'?`<button class="btn sm ok" style="flex:1" onclick="markIncomePaid('${esc(inc.income_uid)}')">✅ ثبت پرداخت</button>`:''}
+              <button class="btn sm ghost" style="flex:1" onclick="if(confirm('حذف شود؟')) deleteIncome('${esc(inc.income_uid)}')">🗑</button>
+            </div>
+          </div>`;
+        }).join('');
+      }
+    }
+
+  }catch(e){
+    if(list) list.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+
+function openIncomeSheet(){
+  if(!window._projects) loadProjects();
+  const sel=$('#inc-project');
+  if(sel && window._projects){
+    sel.innerHTML = '<option value="">انتخاب پروژه</option>' + window._projects.map(p=>`<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('');
+  }
+  // Default month to current Jalali
+  const now = new Date();
+  // Approximate Jalali month — we will fetch from API for accuracy
+  (async()=>{
+    try{
+      const data = await api('/api/financial/summary');
+      if(data.summary && data.summary.current_month && $('#inc-month')){
+        $('#inc-month').value = data.summary.current_month;
+      }
+    }catch(e){}
+  })();
+  $('#incomeBack').classList.add('open');
+}
+function closeIncomeSheet(){ $('#incomeBack').classList.remove('open'); }
+
+async function saveIncome(){
+  const btn=$('#inc-save');
+  const proj=$('#inc-project').value;
+  const amount=$('#inc-amount').value;
+  const month=$('#inc-month').value.trim();
+  if(!proj){ toast('پروژه را انتخاب کن'); return; }
+  if(!amount){ toast('مبلغ لازم است'); return; }
+  if(!month){ toast('ماه شمسی لازم است (مثال: 1404-06)'); return; }
+  const payload={
+    project_slug: proj,
+    amount: parseFloat(amount),
+    month_jalali: month,
+    status: $('#inc-status').value,
+    payment_method: $('#inc-method').value.trim()||null,
+    notes: $('#inc-notes').value.trim()||null,
+  };
+  btn.disabled=true; btn.innerHTML='<span class="loader"></span>';
+  try{
+    const r=await api('/api/financial/incomes',{method:'POST',body:JSON.stringify(payload)});
+    if(r.executed) toast('✅ درآمد ثبت شد','ok');
+    else toast('⏳ درخواست ثبت شد');
+    closeIncomeSheet();
+    await loadFinancial();
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+  finally{ btn.disabled=false; btn.textContent='ثبت درآمد'; }
+}
+
+async function markIncomePaid(uid){
+  if(!confirm('پرداخت این ماه ثبت شود؟')) return;
+  try{
+    const r=await api('/api/financial/incomes/'+encodeURIComponent(uid)+'/paid',{method:'POST',body:JSON.stringify({})});
+    if(r.executed) toast('✅ پرداخت ثبت شد','ok');
+    else toast('⏳ درخواست ثبت شد');
+    await loadFinancial();
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+
+async function deleteIncome(uid){
+  try{
+    const r=await api('/api/financial/incomes/'+encodeURIComponent(uid),{method:'DELETE'});
+    if(r.executed) toast('🗑 حذف شد','ok');
+    else toast('⏳ درخواست حذف ثبت شد');
+    await loadFinancial();
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+
+async function loadFinancialDetail(slug){
+  // For now just filter to that project
+  try{
+    const data = await api('/api/financial/incomes?project='+encodeURIComponent(slug)+'&limit=20');
+    const list=$('#financialList');
+    if(list){
+      const items=data.incomes||[];
+      list.innerHTML = items.length ? items.map(inc=>{
+        const emoji = {paid:'✅',pending:'⏳',overdue:'🔴'}[inc.status]||'•';
+        return `<div class="item"><div class="t">${emoji} ${esc(inc.month_jalali)} — ${Charts.compact(inc.amount)} IRT — ${esc(inc.status)}</div></div>`;
+      }).join('') : emptyState('💰','درآمدی برای این پروژه نیست');
+    }
+    document.querySelectorAll('#financialSeg button').forEach(b=>b.classList.remove('on'));
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+
+/* ---------- Enhanced Google Charts (§4, §5) — with daily trends ---------- */
+async function loadGoogleCharts(){
+  // This is called from loadGoogleData but we enhance to show daily line charts
+  try{
+    const trendData = await api('/api/analytics');
+    const gscTrend = trendData.data && trendData.data.gsc_trend ? trendData.data.gsc_trend : null;
+    if(gscTrend && gscTrend.gsc && gscTrend.gsc.dates && gscTrend.gsc.dates.length){
+      const el = document.getElementById('googleDailyChart');
+      if(el){
+        el.innerHTML = Charts.lineChart({
+          labels: gscTrend.gsc.dates_jalali ? gscTrend.gsc.dates_jalali.map(d=>d.slice(5)) : gscTrend.gsc.dates,
+          height: 160,
+          series: [
+            {data: gscTrend.gsc.clicks, color: '#6c8cff'},
+            {data: gscTrend.gsc.impressions.map(v=>Math.round(v/10)), color: '#36e2b0'},
+          ]
+        });
+      }
+    }
+  }catch(e){}
+}
+
+
+async function syncGoogleToStorage(){
+  toast('در حال همگام‌سازی تاریخچه گوگل…');
+  try{
+    // This will trigger storage sync via backend if we add endpoint
+    // For now just call google overview which also syncs if we implement
+    const r = await api('/api/google/sync',{method:'POST'});
+    toast('✅ همگام‌سازی شد: '+(r.saved||0)+' روز','ok');
+    await loadGoogleData();
+  }catch(e){
+    // Fallback: just reload
+    toast('خطا: '+e.message,'err');
+    await loadGoogleData();
+  }
+}
+
+
+async function sendFinancialReminders(dryRun){
+  const btnText = dryRun ? 'پیش‌نمایش' : 'ارسال';
+  toast('در حال '+btnText+' یادآوری‌ها…');
+  try{
+    const r = await api('/api/financial/send-reminders',{method:'POST',body:JSON.stringify({dry_run: dryRun, max_send: 10})});
+    const card = $('#financialRemindersCard');
+    const list = $('#financialRemindersList');
+    if(card) card.style.display='block';
+    if(list){
+      if(!r.results || !r.results.length){
+        list.innerHTML = emptyState('✅','هیچ پرداخت معوقی نیست');
+      } else {
+        list.innerHTML = r.results.map(res=>{
+          const proj = res.project_name || '';
+          const client = res.client ? res.client.name : 'کارفرما';
+          const days = res.days_overdue || 0;
+          const msg = res.message || '';
+          return `<div class="item ${days>3?'hot':''}">
+            <div class="top"><div class="t">🔴 ${esc(proj)} — ${esc(client)} — ${fa(days)} روز معوق</div></div>
+            <div class="muted-s" style="white-space:pre-wrap;background:rgba(0,0,0,.2);padding:8px;border-radius:8px;margin-top:6px;font-size:11.5px">${esc(msg.slice(0,400))}…</div>
+            <div class="meta"><span>${res.send_result ? esc(res.send_result.method||'') : ''}</span></div>
+            ${!dryRun && res.send_result && res.send_result.action_uid ? `<div class="muted-s">⏳ در انتظار تأیید: ${esc(res.send_result.action_uid)}</div>` : ''}
+          </div>`;
+        }).join('') + `<div class="muted-s" style="margin-top:10px">${esc(r.summary_text||'').slice(0,500)}</div>`;
+      }
+    }
+    if(dryRun) toast('✅ پیش‌نمایش آماده شد','ok');
+    else toast('⏳ درخواست‌های ارسال ثبت شد — منتظر تأیید','ok');
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+
+async function loadGscTopicSuggestions(){
+  const list=$('#gscSuggestionsList');
+  if(!list){
+    // Create a sheet or switch view
+    // For now use content list
+    const clist=$('#contentList');
+    if(clist) clist.innerHTML = skeleton(4);
+  }
+  const targetList = list || $('#contentList');
+  if(targetList) targetList.innerHTML = skeleton(4);
+  try{
+    const data = await api('/api/content/suggest-topics?limit=20');
+    const items = data.suggestions || [];
+    if(!items.length){
+      if(targetList) targetList.innerHTML = emptyState('💡','پیشنهادی از GSC یافت نشد — اتصال GSC را چک کن یا از محصولات استفاده کن');
+      return;
+    }
+    if(targetList){
+      targetList.innerHTML = items.map(s=>`<div class="item" onclick="document.getElementById('cg-topic').value='${esc(s.topic).replace(/'/g, "\\'")}'; openContentGenerateSheet()">
+        <div class="top"><div class="t">💡 ${esc(s.topic)}</div><span class="badge b-normal">${esc(s.source)}</span></div>
+        <div class="muted-s">${esc(s.reason)}</div>
+        <div class="meta"><span>نمایش: ${fa(Math.round(s.impressions||0))}</span><span>CTR: ${((s.ctr||0)*100).toFixed(1)}٪</span><span>جایگاه: ${fa((s.position||0).toFixed(1))}</span></div>
+        <div style="margin-top:6px"><button class="btn sm" style="width:100%">✨ تولید مقاله برای این موضوع</button></div>
+      </div>`).join('');
+    }
+    // Switch to content tab if needed
+    if(!document.getElementById('v-content').classList.contains('active')){
+      document.querySelector('nav.tabs button[data-v=content]').click();
+    }
+  }catch(e){
+    if(targetList) targetList.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+
 /* ---------- navigation ---------- */
+
+
+
+
+
+
+
+
+/* ---------- Content Agent (§9) ---------- */
+let currentContentFilter='all';
+async function loadContent(f){
+  currentContentFilter = f || currentContentFilter;
+  document.querySelectorAll('#contentSeg button').forEach(b=>b.classList.toggle('on', b.dataset.f===currentContentFilter));
+  const list=$('#contentList');
+  const statsEl=$('#contentStats');
+  const countEl=$('#contentCount');
+  list.innerHTML = skeleton(4);
+  try{
+    const data = await api('/api/content/drafts?limit=50');
+    let items = data.drafts;
+    if(currentContentFilter!=='all'){
+      items = items.filter(d=>d.status===currentContentFilter);
+    }
+    if(countEl) countEl.textContent = fa(items.length)+' پیش‌نویس';
+    // Stats
+    try{
+      const sData = await api('/api/content/stats');
+      const s = sData.stats;
+      if(statsEl){
+        statsEl.innerHTML = `<div class="stats">
+          <div class="stat"><div class="n">${fa(s.total)}</div><div class="l">کل</div></div>
+          <div class="stat"><div class="n">${fa(s.by_status.draft||0)}</div><div class="l">پیش‌نویس</div></div>
+          <div class="stat ${s.by_status.pending_approval?'warn':''}"><div class="n">${fa(s.by_status.pending_approval||0)}</div><div class="l">منتظر تأیید</div></div>
+          <div class="stat ok"><div class="n">${fa(s.by_status.published||0)}</div><div class="l">منتشرشده</div></div>
+        </div>`;
+      }
+    }catch(e){}
+
+    if(!items.length){
+      list.innerHTML = emptyState('📝','پیش‌نویسی نیست — یکی تولید کن');
+      return;
+    }
+    list.innerHTML = items.map(d=>{
+      const statusLabels={draft:'پیش‌نویس',pending_approval:'منتظر تأیید',approved:'تأییدشده',published:'منتشرشده',rejected:'ردشده',archived:'آرشیو'};
+      const badge = d.status==='published' ? 'b-done' : d.status==='pending_approval' ? 'b-high' : d.status==='draft' ? 'b-normal' : 'b-status';
+      return `<div class="item" onclick="openContentDetail('${esc(d.draft_uid)}')">
+        <div class="top"><div class="t">${esc(d.title)}</div><span class="badge ${badge}">${esc(statusLabels[d.status]||d.status)}</span></div>
+        <div class="meta"><span>${fa(d.word_count)} کلمه</span>${d.seo_score?`<span>سئو ${fa(d.seo_score)}</span>`:''}${pBadge(d.project_name)}</div>
+        ${d.excerpt?`<div class="muted-s">${esc(d.excerpt.slice(0,100))}…</div>`:''}
+      </div>`;
+    }).join('');
+  }catch(e){
+    list.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+
+function openContentGenerateSheet(){
+  if(!window._projects) loadProjects();
+  const sel=$('#cg-project');
+  if(sel && window._projects){
+    sel.innerHTML = '<option value="">بدون پروژه</option>' + window._projects.map(p=>`<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('');
+  }
+  $('#contentGenBack').classList.add('open');
+}
+function closeContentGenerateSheet(){ $('#contentGenBack').classList.remove('open'); }
+
+async function saveContentGenerate(){
+  const btn=$('#cg-save');
+  const topic=$('#cg-topic').value.trim();
+  if(!topic){ toast('موضوع لازم است'); return; }
+  const payload={
+    topic,
+    project_slug:$('#cg-project').value||null,
+    target_words:parseInt($('#cg-words').value)||2000,
+  };
+  btn.disabled=true; btn.innerHTML='<span class="loader"></span> در حال تولید…';
+  try{
+    const r=await api('/api/content/generate',{method:'POST',body:JSON.stringify(payload)});
+    if(r.executed) toast('✅ مقاله تولید شد','ok');
+    else toast('⏳ درخواست ثبت شد و منتظر تأیید است');
+    closeContentGenerateSheet();
+    await loadContent();
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+  finally{ btn.disabled=false; btn.textContent='تولید محتوا'; }
+}
+
+async function openContentDetail(uid){
+  $('#contentDetailBack').classList.add('open');
+  $('#contentDetailBody').innerHTML = skeleton(4);
+  try{
+    const data = await api('/api/content/drafts/'+encodeURIComponent(uid));
+    const d=data.draft;
+    let h=`<div class="muted-s" style="margin-bottom:8px">${pBadge(d.project_id||'')} ${esc(d.status)} • ${fa(d.word_count)} کلمه ${d.seo_score?`• سئو ${fa(d.seo_score)}`:''}</div>`;
+    if(d.slug_en) h+=`<div class="field"><label>Slug EN</label><div class="muted-s">${esc(d.slug_en)}</div></div>`;
+    if(d.meta_title) h+=`<div class="field"><label>Meta Title</label><div class="muted-s">${esc(d.meta_title)}</div></div>`;
+    if(d.meta_description) h+=`<div class="field"><label>Meta Description</label><div class="muted-s">${esc(d.meta_description)}</div></div>`;
+    if(d.focus_keyword) h+=`<div class="field"><label>Focus Keyword</label><div class="muted-s">${esc(d.focus_keyword)}</div></div>`;
+    if(d.cannibalization && d.cannibalization.length){
+      h+=`<div class="field"><label>⚠️ Cannibalization</label><div class="muted-s">${d.cannibalization.map(c=>`${esc(c.title)} (${fa(c.similarity)})`).join('<br>')}</div></div>`;
+    }
+    if(d.outline && d.outline.length){
+      h+=`<div class="field"><label>Outline</label><div class="muted-s">${d.outline.map((o,i)=>`${fa(i+1)}. ${esc(o)}`).join('<br>')}</div></div>`;
+    }
+    if(d.content){
+      const preview = d.content.slice(0,800);
+      h+=`<div class="field"><label>محتوا (پیش‌نمایش)</label><div class="muted-s" style="white-space:pre-wrap;max-height:300px;overflow:auto;background:rgba(0,0,0,.2);padding:10px;border-radius:10px">${esc(preview)}${d.content.length>800?'…':''}</div></div>`;
+    }
+    if(d.faq && d.faq.length){
+      h+=`<div class="field"><label>FAQ</label><div class="muted-s">${d.faq.map(f=>`<b>Q: ${esc(f.q||f.question||'')}</b><br>A: ${esc(f.a||f.answer||'')}`).join('<br><br>')}</div></div>`;
+    }
+    if(d.image_prompt) h+=`<div class="field"><label>Image Prompt</label><div class="muted-s">${esc(d.image_prompt)}</div></div>`;
+    if(d.cta) h+=`<div class="field"><label>CTA</label><div class="muted-s">${esc(d.cta)}</div></div>`;
+    if(d.wordpress_url) h+=`<div class="field"><label>WordPress</label><div class="muted-s"><a href="${esc(d.wordpress_url)}" target="_blank">${esc(d.wordpress_url)}</a></div></div>`;
+
+    h+=`<div class="sep"></div><div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn sm" onclick="seoAuditContent('${esc(d.draft_uid)}')">🔍 بررسی سئو</button>
+      <button class="btn sm ghost" onclick="publishContentDraft('${esc(d.draft_uid)}', true)">📤 پیش‌نویس وردپرس</button>
+      <button class="btn sm ghost" onclick="publishContentDraft('${esc(d.draft_uid)}', false)">🚀 انتشار نهایی (🔴)</button>
+      <button class="btn sm ghost" onclick="if(confirm('حذف شود؟')) deleteContentDraft('${esc(d.draft_uid)}')">🗑 حذف</button>
+    </div>`;
+
+    $('#contentDetailBody').innerHTML = h;
+    $('#contentDetailTitle').textContent = '📝 '+d.title;
+  }catch(e){
+    $('#contentDetailBody').innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+function closeContentDetail(){ $('#contentDetailBack').classList.remove('open'); }
+
+async function seoAuditContent(uid){
+  toast('در حال بررسی سئو…');
+  try{
+    const r=await api('/api/content/drafts/'+encodeURIComponent(uid)+'/seo-audit',{method:'POST'});
+    if(r.executed){
+      toast('✅ بررسی سئو انجام شد — امتیاز '+(r.audit?r.audit.score:'?'),'ok');
+      await openContentDetail(uid);
+    } else {
+      toast('⏳ درخواست بررسی ثبت شد');
+    }
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+
+async function publishContentDraft(uid, asDraft){
+  const action = asDraft ? 'پیش‌نویس وردپرس' : 'انتشار نهایی';
+  if(!confirm(action+' انجام شود؟'+(asDraft?'':' این اقدام 🔴 و نیاز به دو تأیید دارد.'))) return;
+  try{
+    const r=await api('/api/content/drafts/'+encodeURIComponent(uid)+'/publish',{method:'POST',body:JSON.stringify({as_draft:asDraft})});
+    if(r.executed) toast('✅ '+ (r.result||action+' انجام شد'),'ok');
+    else toast('⏳ درخواست ثبت شد و منتظر تأیید است');
+    await loadContent();
+    closeContentDetail();
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+
+async function deleteContentDraft(uid){
+  try{
+    const r=await api('/api/content/drafts/'+encodeURIComponent(uid),{method:'DELETE'});
+    if(r.executed) toast('🗑 حذف شد','ok');
+    else toast('⏳ درخواست حذف ثبت شد');
+    await loadContent();
+    closeContentDetail();
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+
+
+/* ---------- Google GSC + GA4 (§4, §5) ---------- */
+async function loadGoogleData(projectSlug){
+  const statusEl = $('#googleStatus');
+  const summaryEl = $('#googleSummary');
+  const queriesEl = $('#googleTopQueries');
+  if(statusEl) statusEl.textContent = 'در حال بارگذاری…';
+  if(summaryEl) summaryEl.innerHTML = skeleton(2,'sk-line');
+  if(queriesEl) queriesEl.innerHTML = '';
+  try{
+    let url = '/api/google/overview';
+    if(projectSlug) url = '/api/projects/'+encodeURIComponent(projectSlug)+'/google';
+    const r = await api(url);
+    const g = r.google;
+    if(statusEl) statusEl.textContent = 'متصل ✓';
+    let h = '';
+    if(g.gsc && g.gsc.totals){
+      const tot = g.gsc.totals;
+      h += `<div class="stats" style="margin-bottom:10px">
+        <div class="stat"><div class="n">${fa(Math.round(tot.clicks||0))}</div><div class="l">کلیک GSC</div></div>
+        <div class="stat"><div class="n">${Charts.compact(Math.round(tot.impressions||0))}</div><div class="l">نمایش</div></div>
+        <div class="stat"><div class="n">${fa((tot.ctr*100||0).toFixed(1))}٪</div><div class="l">CTR</div></div>
+        <div class="stat"><div class="n">${fa((tot.position||0).toFixed(1))}</div><div class="l">جایگاه</div></div>
+      </div>`;
+    }
+    if(g.ga4 && g.ga4.totals){
+      const tot = g.ga4.totals;
+      h += `<div class="stats" style="margin-bottom:10px">
+        <div class="stat"><div class="n">${fa(tot.sessions||'—')}</div><div class="l">سشن GA4</div></div>
+        <div class="stat"><div class="n">${fa(tot.totalUsers||'—')}</div><div class="l">کاربر</div></div>
+        <div class="stat"><div class="n">${fa(tot.screenPageViews||'—')}</div><div class="l">بازدید</div></div>
+      </div>`;
+    }
+    if(!h) h = `<div class="muted-s">داده گوگل برای این پروژه هنوز بارگذاری نشده یا اتصال تنظیم نشده.</div>`;
+    if(summaryEl) summaryEl.innerHTML = h;
+
+    // Daily trend chart
+    const dailyChartEl = document.getElementById('googleDailyChart');
+    if(dailyChartEl){
+      if(g.gsc && g.gsc.daily && g.gsc.daily.dates && g.gsc.daily.dates.length){
+        const daily = g.gsc.daily;
+        const labels = daily.dates.map(d=>d.slice(5)); // MM-DD
+        dailyChartEl.innerHTML = `<div class="muted-s" style="font-weight:700;margin-bottom:6px">📈 روند روزانه کلیک / نمایش (۲۸ روز)</div>` +
+          Charts.lineChart({
+            labels: labels,
+            height: 160,
+            series: [
+              {data: daily.clicks, color: '#6c8cff'},
+              {data: daily.impressions.map(v=>Math.round(v/10)), color: '#36e2b0'},
+            ]
+          }) + `<div class="legend"><span><i style="background:#6c8cff"></i>کلیک</span><span><i style="background:#36e2b0"></i>نمایش (÷۱۰)</span></div>`;
+      } else if(ANALYTICS && ANALYTICS.gsc_trend && ANALYTICS.gsc_trend.gsc && ANALYTICS.gsc_trend.gsc.dates && ANALYTICS.gsc_trend.gsc.dates.length){
+        const daily = ANALYTICS.gsc_trend.gsc;
+        const labels = daily.dates_jalali ? daily.dates_jalali.map(d=>d.slice(5)) : daily.dates.map(d=>d.slice(5));
+        dailyChartEl.innerHTML = `<div class="muted-s" style="font-weight:700;margin-bottom:6px">📈 روند روزانه (ذخیره‌شده)</div>` +
+          Charts.lineChart({
+            labels: labels,
+            height: 160,
+            series: [
+              {data: daily.clicks, color: '#6c8cff'},
+              {data: daily.impressions.map(v=>Math.round(v/10)), color: '#36e2b0'},
+            ]
+          });
+      } else {
+        dailyChartEl.innerHTML = '';
+      }
+    }
+
+    // Top queries
+    if(queriesEl){
+      let qh = '';
+      if(g.gsc && g.gsc.top_queries && g.gsc.top_queries.length){
+        qh += `<div class="muted-s" style="font-weight:700;margin:8px 0 6px">🔍 کوئری‌های برتر</div>`;
+        qh += g.gsc.top_queries.slice(0,6).map(q=>{
+          const keys = q.keys || [];
+          return `<div class="item"><div class="t">${esc(keys[0]||'—')}</div><div class="meta"><span>${fa(Math.round(q.clicks||0))} کلیک</span><span>${fa(Math.round(q.impressions||0))} نمایش</span><span>جایگاه ${fa((q.position||0).toFixed(1))}</span></div></div>`;
+        }).join('');
+      }
+      if(g.gsc && g.gsc.top_pages && g.gsc.top_pages.length){
+        qh += `<div class="muted-s" style="font-weight:700;margin:12px 0 6px">📄 صفحات برتر</div>`;
+        qh += g.gsc.top_pages.slice(0,5).map(p=>{
+          const keys = p.keys || [];
+          const page = keys[0]||'';
+          return `<div class="item"><div class="t" style="font-size:12px;direction:ltr;text-align:left">${esc(page.slice(0,80))}</div><div class="meta"><span>${fa(Math.round(p.clicks||0))} کلیک</span></div></div>`;
+        }).join('');
+      }
+      // Device breakdown
+      if(g.gsc && g.gsc.devices && g.gsc.devices.length){
+        qh += `<div class="muted-s" style="font-weight:700;margin:12px 0 6px">📱 تفکیک دستگاه</div>`;
+        qh += g.gsc.devices.map(d=>{
+          const dev = (d.keys||[])[0]||'';
+          const label = {DESKTOP:'دسکتاپ',MOBILE:'موبایل',TABLET:'تبلت'}[dev]||dev;
+          return `<div class="item"><div class="t">${esc(label)}</div><div class="meta"><span>${fa(Math.round(d.clicks||0))} کلیک</span><span>CTR ${((d.ctr||0)*100).toFixed(1)}٪</span></div></div>`;
+        }).join('');
+      }
+      queriesEl.innerHTML = qh;
+    }
+
+    if(g.errors && g.errors.length){
+      if(summaryEl) summaryEl.innerHTML += `<div class="muted-s" style="color:#ff9b9b;margin-top:8px">${esc(g.errors.join(' • '))}</div>`;
+    }
+
+  }catch(e){
+    if(statusEl) statusEl.textContent = 'تنظیم نشده';
+    if(summaryEl){
+      if(e.message && e.message.includes('not configured')){
+        summaryEl.innerHTML = `<div class="empty">🔌 اتصال گوگل تنظیم نشده<br><span class="muted-s">از تب اتصال‌ها → Google Search Console و GA4 را وصل کن.<br>راهنما: <code>python -m app.tools.google_oauth</code></span></div>`;
+      } else {
+        summaryEl.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+      }
+    }
+  }
+}
+
+
+/* ---------- Business Analyst + Sales Agent (§12, §13) ---------- */
+async function loadBusinessAnalysis(projectSlug){
+  const scoreEl = $('#businessScore');
+  const summaryEl = $('#businessSummary');
+  const insightsEl = $('#businessInsights');
+  if(summaryEl) summaryEl.innerHTML = skeleton(2,'sk-line');
+  if(insightsEl) insightsEl.innerHTML = '';
+  try{
+    let url = '/api/business/analysis';
+    if(projectSlug) url = '/api/projects/'+encodeURIComponent(projectSlug)+'/business';
+    const r = await api(url);
+    const a = r.analysis;
+    if(scoreEl) scoreEl.textContent = fa(a.health_score)+'٪ '+esc(a.health_label);
+    let h = `<div class="stats" style="margin-bottom:10px">
+      <div class="stat ${a.health_score<50?'hot':a.health_score<70?'warn':''}"><div class="n">${fa(a.health_score)}٪</div><div class="l">سلامت</div></div>
+      <div class="stat"><div class="n">${fa(a.counts.open_tasks||0)}</div><div class="l">تسک باز</div></div>
+      <div class="stat"><div class="n">${fa(a.counts.overdue_tasks||0)}</div><div class="l">معوق</div></div>
+      <div class="stat"><div class="n">${fa(a.counts.deals_total||0)}</div><div class="l">معامله</div></div>
+    </div>`;
+    if(summaryEl) summaryEl.innerHTML = h;
+
+    if(insightsEl){
+      let ih = '';
+      if(a.insights && a.insights.length){
+        ih += a.insights.slice(0,5).map(ins=>{
+          const sev = ins.severity;
+          const badge = sev==='high' ? 'b-urgent' : sev==='medium' ? 'b-high' : 'b-normal';
+          const icon = sev==='high' ? '🔴' : sev==='medium' ? '🟡' : '🟢';
+          return `<div class="item ${sev==='high'?'hot':''}"><div class="top"><div class="t">${icon} ${esc(ins.title)}</div><span class="badge ${badge}">${esc(sev)}</span></div><div class="muted-s">${esc(ins.detail||'')}</div></div>`;
+        }).join('');
+      }
+      if(a.recommendations && a.recommendations.length){
+        ih += `<div class="muted-s" style="font-weight:700;margin:10px 0 6px">💡 پیشنهاد اقدام:</div>`;
+        ih += a.recommendations.slice(0,4).map((rec,i)=>`<div class="muted-s">${fa(i+1)}. ${esc(rec)}</div>`).join('');
+      }
+      insightsEl.innerHTML = ih || `<div class="muted-s">یافته‌ای نیست — همه چیز مرتب است ✅</div>`;
+    }
+
+  }catch(e){
+    if(summaryEl) summaryEl.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+
+async function loadSalesPipeline(projectSlug){
+  const valueEl = $('#salesValue');
+  const summaryEl = $('#salesSummary');
+  const listEl = $('#salesList');
+  if(summaryEl) summaryEl.innerHTML = skeleton(2,'sk-line');
+  if(listEl) listEl.innerHTML = '';
+  try{
+    let url = '/api/sales/pipeline';
+    if(projectSlug) url = '/api/projects/'+encodeURIComponent(projectSlug)+'/sales';
+    const r = await api(url);
+    const p = r.pipeline;
+    if(valueEl) valueEl.textContent = Charts.compact(p.pipeline_value)+' IRT';
+    let h = `<div class="stats" style="margin-bottom:10px">
+      <div class="stat"><div class="n">${fa(p.total_deals)}</div><div class="l">معامله</div></div>
+      <div class="stat"><div class="n">${Charts.compact(p.pipeline_value)}</div><div class="l">Pipeline</div></div>
+      <div class="stat"><div class="n">${Charts.compact(p.weighted_value)}</div><div class="l">وزنی</div></div>
+      <div class="stat ${p.stale_deals && p.stale_deals.length?'warn':''}"><div class="n">${fa(p.stale_deals? p.stale_deals.length:0)}</div><div class="l">راکد</div></div>
+    </div>`;
+    // Stage breakdown
+    const stageLabels={lead:'سرنخ',qualified:'واجد شرایط',proposal:'پیشنهاد',negotiation:'مذاکره',won:'برنده',lost:'باخته'};
+    if(p.by_stage){
+      h += `<div class="muted-s" style="margin:8px 0 6px">تفکیک مرحله:</div><div class="list">`;
+      Object.entries(p.by_stage).forEach(([stage,count])=>{
+        if(count>0) h+=`<div class="muted-s">${esc(stageLabels[stage]||stage)}: ${fa(count)}</div>`;
+      });
+      h+=`</div>`;
+    }
+    if(summaryEl) summaryEl.innerHTML = h;
+
+    if(listEl){
+      let lh = '';
+      if(p.stale_deals && p.stale_deals.length){
+        lh += `<div class="muted-s" style="font-weight:700;margin:8px 0 6px">⚠️ راکد:</div>`;
+        lh += p.stale_deals.slice(0,4).map(d=>`<div class="item"><div class="t">${esc(d.title)} — ${fa(d.days_stale)} روز راکد</div></div>`).join('');
+      }
+      if(p.closing_soon && p.closing_soon.length){
+        lh += `<div class="muted-s" style="font-weight:700;margin:10px 0 6px">📅 بستن زودهنگام:</div>`;
+        lh += p.closing_soon.slice(0,4).map(d=>`<div class="item"><div class="t">${esc(d.title)} — ${fa(d.days_to_close)} روز دیگر</div></div>`).join('');
+      }
+      if(p.next_actions && p.next_actions.length){
+        lh += `<div class="muted-s" style="font-weight:700;margin:10px 0 6px">🎯 اقدام بعدی:</div>`;
+        lh += p.next_actions.slice(0,5).map(na=>`<div class="item"><div class="t">${esc(na.title)}: ${esc(na.action)}</div></div>`).join('');
+      }
+      listEl.innerHTML = lh || `<div class="muted-s">داده فروش نیست</div>`;
+    }
+
+  }catch(e){
+    if(summaryEl) summaryEl.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+
+
+/* ---------- Financial — Monthly Income (redefined §15) ---------- */
+let currentFinancialFilter='current';
+async function loadFinancial(f){
+  currentFinancialFilter = f || currentFinancialFilter;
+  document.querySelectorAll('#financialSeg button').forEach(b=>b.classList.toggle('on', b.dataset.f===currentFinancialFilter));
+  const list=$('#financialList');
+  const statsEl=$('#financialStats');
+  const summaryEl=$('#financialSummary');
+  const monthEl=$('#financialMonth');
+  const contractsEl=$('#contractsList');
+  if(list) list.innerHTML = skeleton(4);
+  if(statsEl) statsEl.innerHTML = skeleton(2,'sk-card');
+  try{
+    const data = await api('/api/financial/summary');
+    const summary = data.summary;
+    const contracts = data.contracts || [];
+
+    if(monthEl) monthEl.textContent = summary.current_month || '';
+    if(statsEl){
+      statsEl.innerHTML = `<div class="stats">
+        <div class="stat ok"><div class="n">${Charts.compact(summary.total_paid)}</div><div class="l">وصولی</div></div>
+        <div class="stat"><div class="n">${Charts.compact(summary.total_expected)}</div><div class="l">کل انتظار</div></div>
+        <div class="stat ${summary.collection_rate<70?'warn':''}"><div class="n">${fa(summary.collection_rate)}٪</div><div class="l">نرخ وصول</div></div>
+        <div class="stat ${summary.overdue && summary.overdue.length?'hot':''}"><div class="n">${fa(summary.overdue?summary.overdue.length:0)}</div><div class="l">معوق</div></div>
+      </div>`;
+    }
+
+    if(summaryEl){
+      let h = '';
+      if(summary.months && summary.months.length){
+        h += `<div class="muted-s" style="font-weight:700;margin-bottom:6px">📊 ۶ ماه اخیر</div>`;
+        h += `<div class="chart-wrap">${Charts.barList({data: summary.months.slice(0,6).map(m=>({label: m.month_jalali, value: m.paid, color: m.paid_percent>=100 ? '#36e2b0' : m.paid_percent>=50 ? '#ffb454' : '#ff6b81'}))})}</div>`;
+      }
+      summaryEl.innerHTML = h;
+    }
+
+    if(contractsEl){
+      if(!contracts.length) contractsEl.innerHTML = emptyState('📋','پروژه فعالی نیست');
+      else {
+        contractsEl.innerHTML = contracts.map(c=>{
+          const curEmoji = {paid:'✅',pending:'⏳',overdue:'🔴',not_created:'➕'}[c.current_month_status] || '•';
+          return `<div class="item" onclick="loadFinancialDetail('${esc(c.slug)}')">
+            <div class="top"><div class="t">${curEmoji} ${esc(c.name)}</div><span class="badge ${c.overdue_count?'b-urgent':'b-normal'}">${c.overdue_count? fa(c.overdue_count)+' معوق' : 'مرتب'}</span></div>
+            <div class="meta"><span>میانگین قرارداد: ${Charts.compact(c.avg_contract)} IRT</span><span>ماه جاری: ${esc(c.current_month_status)}</span></div>
+          </div>`;
+        }).join('');
+      }
+    }
+
+    // Filtered list
+    let items = [];
+    if(currentFinancialFilter==='current'){
+      items = summary.current_month_incomes || [];
+    } else if(currentFinancialFilter==='overdue'){
+      items = summary.overdue || [];
+    } else if(currentFinancialFilter==='pending'){
+      items = summary.pending || [];
+    } else {
+      // all — fetch from /api/financial/incomes
+      const allData = await api('/api/financial/incomes?limit=50');
+      items = allData.incomes || [];
+    }
+
+    if(list){
+      if(!items.length){
+        list.innerHTML = emptyState('💰','موردی در این نما نیست');
+      } else {
+        list.innerHTML = items.map(inc=>{
+          const emoji = {paid:'✅',pending:'⏳',overdue:'🔴',cancelled:'❌',partial:'🟡'}[inc.status] || '•';
+          return `<div class="item ${inc.status==='overdue'?'hot':''}">
+            <div class="top"><div class="t">${emoji} ${esc(inc.project_name)} — ${esc(inc.month_jalali)}</div><span class="badge ${inc.status==='paid'?'b-done':inc.status==='overdue'?'b-urgent':'b-normal'}">${esc(inc.status)}</span></div>
+            <div class="meta"><span>${Charts.compact(inc.amount)} ${esc(inc.currency)}</span><span>${inc.paid_at? 'پرداخت: '+timeAgo(inc.paid_at) : 'موعد: '+(inc.due_at?timeAgo(inc.due_at):'—')}</span></div>
+            ${inc.notes?`<div class="muted-s">${esc(inc.notes.slice(0,80))}</div>`:''}
+            <div style="display:flex;gap:6px;margin-top:6px">
+              ${inc.status!=='paid'?`<button class="btn sm ok" style="flex:1" onclick="markIncomePaid('${esc(inc.income_uid)}')">✅ ثبت پرداخت</button>`:''}
+              <button class="btn sm ghost" style="flex:1" onclick="if(confirm('حذف شود؟')) deleteIncome('${esc(inc.income_uid)}')">🗑</button>
+            </div>
+          </div>`;
+        }).join('');
+      }
+    }
+
+  }catch(e){
+    if(list) list.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+
+function openIncomeSheet(){
+  if(!window._projects) loadProjects();
+  const sel=$('#inc-project');
+  if(sel && window._projects){
+    sel.innerHTML = '<option value="">انتخاب پروژه</option>' + window._projects.map(p=>`<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('');
+  }
+  // Default month to current Jalali
+  const now = new Date();
+  // Approximate Jalali month — we will fetch from API for accuracy
+  (async()=>{
+    try{
+      const data = await api('/api/financial/summary');
+      if(data.summary && data.summary.current_month && $('#inc-month')){
+        $('#inc-month').value = data.summary.current_month;
+      }
+    }catch(e){}
+  })();
+  $('#incomeBack').classList.add('open');
+}
+function closeIncomeSheet(){ $('#incomeBack').classList.remove('open'); }
+
+async function saveIncome(){
+  const btn=$('#inc-save');
+  const proj=$('#inc-project').value;
+  const amount=$('#inc-amount').value;
+  const month=$('#inc-month').value.trim();
+  if(!proj){ toast('پروژه را انتخاب کن'); return; }
+  if(!amount){ toast('مبلغ لازم است'); return; }
+  if(!month){ toast('ماه شمسی لازم است (مثال: 1404-06)'); return; }
+  const payload={
+    project_slug: proj,
+    amount: parseFloat(amount),
+    month_jalali: month,
+    status: $('#inc-status').value,
+    payment_method: $('#inc-method').value.trim()||null,
+    notes: $('#inc-notes').value.trim()||null,
+  };
+  btn.disabled=true; btn.innerHTML='<span class="loader"></span>';
+  try{
+    const r=await api('/api/financial/incomes',{method:'POST',body:JSON.stringify(payload)});
+    if(r.executed) toast('✅ درآمد ثبت شد','ok');
+    else toast('⏳ درخواست ثبت شد');
+    closeIncomeSheet();
+    await loadFinancial();
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+  finally{ btn.disabled=false; btn.textContent='ثبت درآمد'; }
+}
+
+async function markIncomePaid(uid){
+  if(!confirm('پرداخت این ماه ثبت شود؟')) return;
+  try{
+    const r=await api('/api/financial/incomes/'+encodeURIComponent(uid)+'/paid',{method:'POST',body:JSON.stringify({})});
+    if(r.executed) toast('✅ پرداخت ثبت شد','ok');
+    else toast('⏳ درخواست ثبت شد');
+    await loadFinancial();
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+
+async function deleteIncome(uid){
+  try{
+    const r=await api('/api/financial/incomes/'+encodeURIComponent(uid),{method:'DELETE'});
+    if(r.executed) toast('🗑 حذف شد','ok');
+    else toast('⏳ درخواست حذف ثبت شد');
+    await loadFinancial();
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+
+async function loadFinancialDetail(slug){
+  // For now just filter to that project
+  try{
+    const data = await api('/api/financial/incomes?project='+encodeURIComponent(slug)+'&limit=20');
+    const list=$('#financialList');
+    if(list){
+      const items=data.incomes||[];
+      list.innerHTML = items.length ? items.map(inc=>{
+        const emoji = {paid:'✅',pending:'⏳',overdue:'🔴'}[inc.status]||'•';
+        return `<div class="item"><div class="t">${emoji} ${esc(inc.month_jalali)} — ${Charts.compact(inc.amount)} IRT — ${esc(inc.status)}</div></div>`;
+      }).join('') : emptyState('💰','درآمدی برای این پروژه نیست');
+    }
+    document.querySelectorAll('#financialSeg button').forEach(b=>b.classList.remove('on'));
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+
+/* ---------- Enhanced Google Charts (§4, §5) — with daily trends ---------- */
+async function loadGoogleCharts(){
+  // This is called from loadGoogleData but we enhance to show daily line charts
+  try{
+    const trendData = await api('/api/analytics');
+    const gscTrend = trendData.data && trendData.data.gsc_trend ? trendData.data.gsc_trend : null;
+    if(gscTrend && gscTrend.gsc && gscTrend.gsc.dates && gscTrend.gsc.dates.length){
+      const el = document.getElementById('googleDailyChart');
+      if(el){
+        el.innerHTML = Charts.lineChart({
+          labels: gscTrend.gsc.dates_jalali ? gscTrend.gsc.dates_jalali.map(d=>d.slice(5)) : gscTrend.gsc.dates,
+          height: 160,
+          series: [
+            {data: gscTrend.gsc.clicks, color: '#6c8cff'},
+            {data: gscTrend.gsc.impressions.map(v=>Math.round(v/10)), color: '#36e2b0'},
+          ]
+        });
+      }
+    }
+  }catch(e){}
+}
+
+
+async function syncGoogleToStorage(){
+  toast('در حال همگام‌سازی تاریخچه گوگل…');
+  try{
+    // This will trigger storage sync via backend if we add endpoint
+    // For now just call google overview which also syncs if we implement
+    const r = await api('/api/google/sync',{method:'POST'});
+    toast('✅ همگام‌سازی شد: '+(r.saved||0)+' روز','ok');
+    await loadGoogleData();
+  }catch(e){
+    // Fallback: just reload
+    toast('خطا: '+e.message,'err');
+    await loadGoogleData();
+  }
+}
+
+
+async function sendFinancialReminders(dryRun){
+  const btnText = dryRun ? 'پیش‌نمایش' : 'ارسال';
+  toast('در حال '+btnText+' یادآوری‌ها…');
+  try{
+    const r = await api('/api/financial/send-reminders',{method:'POST',body:JSON.stringify({dry_run: dryRun, max_send: 10})});
+    const card = $('#financialRemindersCard');
+    const list = $('#financialRemindersList');
+    if(card) card.style.display='block';
+    if(list){
+      if(!r.results || !r.results.length){
+        list.innerHTML = emptyState('✅','هیچ پرداخت معوقی نیست');
+      } else {
+        list.innerHTML = r.results.map(res=>{
+          const proj = res.project_name || '';
+          const client = res.client ? res.client.name : 'کارفرما';
+          const days = res.days_overdue || 0;
+          const msg = res.message || '';
+          return `<div class="item ${days>3?'hot':''}">
+            <div class="top"><div class="t">🔴 ${esc(proj)} — ${esc(client)} — ${fa(days)} روز معوق</div></div>
+            <div class="muted-s" style="white-space:pre-wrap;background:rgba(0,0,0,.2);padding:8px;border-radius:8px;margin-top:6px;font-size:11.5px">${esc(msg.slice(0,400))}…</div>
+            <div class="meta"><span>${res.send_result ? esc(res.send_result.method||'') : ''}</span></div>
+            ${!dryRun && res.send_result && res.send_result.action_uid ? `<div class="muted-s">⏳ در انتظار تأیید: ${esc(res.send_result.action_uid)}</div>` : ''}
+          </div>`;
+        }).join('') + `<div class="muted-s" style="margin-top:10px">${esc(r.summary_text||'').slice(0,500)}</div>`;
+      }
+    }
+    if(dryRun) toast('✅ پیش‌نمایش آماده شد','ok');
+    else toast('⏳ درخواست‌های ارسال ثبت شد — منتظر تأیید','ok');
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+
+async function loadGscTopicSuggestions(){
+  const list=$('#gscSuggestionsList');
+  if(!list){
+    // Create a sheet or switch view
+    // For now use content list
+    const clist=$('#contentList');
+    if(clist) clist.innerHTML = skeleton(4);
+  }
+  const targetList = list || $('#contentList');
+  if(targetList) targetList.innerHTML = skeleton(4);
+  try{
+    const data = await api('/api/content/suggest-topics?limit=20');
+    const items = data.suggestions || [];
+    if(!items.length){
+      if(targetList) targetList.innerHTML = emptyState('💡','پیشنهادی از GSC یافت نشد — اتصال GSC را چک کن یا از محصولات استفاده کن');
+      return;
+    }
+    if(targetList){
+      targetList.innerHTML = items.map(s=>`<div class="item" onclick="document.getElementById('cg-topic').value='${esc(s.topic).replace(/'/g, "\\'")}'; openContentGenerateSheet()">
+        <div class="top"><div class="t">💡 ${esc(s.topic)}</div><span class="badge b-normal">${esc(s.source)}</span></div>
+        <div class="muted-s">${esc(s.reason)}</div>
+        <div class="meta"><span>نمایش: ${fa(Math.round(s.impressions||0))}</span><span>CTR: ${((s.ctr||0)*100).toFixed(1)}٪</span><span>جایگاه: ${fa((s.position||0).toFixed(1))}</span></div>
+        <div style="margin-top:6px"><button class="btn sm" style="width:100%">✨ تولید مقاله برای این موضوع</button></div>
+      </div>`).join('');
+    }
+    // Switch to content tab if needed
+    if(!document.getElementById('v-content').classList.contains('active')){
+      document.querySelector('nav.tabs button[data-v=content]').click();
+    }
+  }catch(e){
+    if(targetList) targetList.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+
+/* ---------- navigation ---------- */
+
+
+
+
+
+
 const LOADERS={overview:loadOverview,tasks:()=>loadTasks(),projects:loadProjectView,
-               approvals:loadApprovals,conn:loadConnections,
+               crm:()=>loadCrm(),content:()=>loadContent(),financial:()=>loadFinancial(),approvals:loadApprovals,notifications:()=>loadNotifications(),
+               conn:loadConnections,
                more:()=>{loadMemory();loadLogs();}};
 document.querySelectorAll('nav.tabs button').forEach(b=>{
   b.onclick=()=>{
@@ -1213,6 +3160,34 @@ $('#connClose').onclick=closeConn;
 $('#connBack').onclick=e=>{ if(e.target.id==='connBack') closeConn(); };
 $('#projClose').onclick=()=>$('#projBack').classList.remove('open');
 $('#projBack').onclick=e=>{ if(e.target.id==='projBack') $('#projBack').classList.remove('open'); };
+$('#morningClose').onclick=closeMorningReport;
+$('#morningBack').onclick=e=>{ if(e.target.id==='morningBack') closeMorningReport(); };
+$('#crmContactClose').onclick=closeCrmContactSheet;
+$('#crmContactBack').onclick=e=>{ if(e.target.id==='crmContactBack') closeCrmContactSheet(); };
+$('#cc-cancel').onclick=closeCrmContactSheet;
+$('#cc-save').onclick=saveCrmContact;
+$('#crmDealClose').onclick=closeCrmDealSheet;
+$('#crmDealBack').onclick=e=>{ if(e.target.id==='crmDealBack') closeCrmDealSheet(); };
+$('#cd-cancel').onclick=closeCrmDealSheet;
+$('#cd-save').onclick=saveCrmDeal;
+$('#crmDetailClose').onclick=closeCrmDetail;
+$('#crmDetailBack').onclick=e=>{ if(e.target.id==='crmDetailBack') closeCrmDetail(); };
+document.querySelectorAll('#crmSeg button').forEach(b=>b.onclick=()=>loadCrm(b.dataset.f));
+$('#contentGenClose').onclick=closeContentGenerateSheet;
+$('#contentGenBack').onclick=e=>{ if(e.target.id==='contentGenBack') closeContentGenerateSheet(); };
+$('#cg-cancel').onclick=closeContentGenerateSheet;
+$('#cg-save').onclick=saveContentGenerate;
+$('#contentDetailClose').onclick=closeContentDetail;
+$('#contentDetailBack').onclick=e=>{ if(e.target.id==='contentDetailBack') closeContentDetail(); };
+document.querySelectorAll('#contentSeg button').forEach(b=>b.onclick=()=>loadContent(b.dataset.f));
+$('#incomeClose').onclick=closeIncomeSheet;
+$('#incomeBack').onclick=e=>{ if(e.target.id==='incomeBack') closeIncomeSheet(); };
+$('#inc-cancel').onclick=closeIncomeSheet;
+$('#inc-save').onclick=saveIncome;
+document.querySelectorAll('#financialSeg button').forEach(b=>b.onclick=()=>loadFinancial(b.dataset.f));
+
+
+
 
 $('#t-save').onclick=async()=>{
   const title=$('#t-title').value.trim();

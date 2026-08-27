@@ -228,6 +228,99 @@ def velocity() -> dict:
     }
 
 
+def crm_overview() -> dict:
+    try:
+        from app.crm.repository import crm_stats
+        return crm_stats()
+    except Exception:
+        return {
+            "contacts_total": 0,
+            "contacts_by_status": {},
+            "deals_total": 0,
+            "deals_by_stage": {},
+            "open_deals_amount": 0,
+            "won_amount": 0,
+            "overdue_followups": 0,
+        }
+
+
+def notifications_summary() -> dict:
+    try:
+        from app.notifications.service import get_notification_summary
+        return get_notification_summary()
+    except Exception:
+        return {"total": 0, "by_type": {}, "by_severity": {}, "high_priority": 0, "persisted_unread": 0, "has_critical": False}
+
+
+def content_overview() -> dict:
+    try:
+        from app.content.repository import content_stats
+        return content_stats()
+    except Exception:
+        return {"total": 0, "by_status": {}, "avg_word_count": 0}
+
+
+def business_overview() -> dict:
+    try:
+        from app.agents.business_analyst import analyze_business
+        a = analyze_business()
+        return {
+            "health_score": a["health_score"],
+            "health_label": a["health_label"],
+            "insights_count": len(a["insights"]),
+            "recommendations": a["recommendations"][:3],
+            "counts": a["counts"],
+        }
+    except Exception:
+        return {"health_score": 0, "health_label": "—", "insights_count": 0, "recommendations": [], "counts": {}}
+
+
+def sales_overview() -> dict:
+    try:
+        from app.agents.sales_agent import analyze_sales_pipeline
+        p = analyze_sales_pipeline()
+        return {
+            "total_deals": p["total_deals"],
+            "pipeline_value": p["pipeline_value"],
+            "weighted_value": p["weighted_value"],
+            "by_stage": p["by_stage"],
+            "stale_count": len(p["stale_deals"]),
+            "closing_soon_count": len(p["closing_soon"]),
+        }
+    except Exception:
+        return {"total_deals": 0, "pipeline_value": 0, "weighted_value": 0, "by_stage": {}, "stale_count": 0, "closing_soon_count": 0}
+
+
+def financial_overview() -> dict:
+    try:
+        from app.financial.repository import monthly_summary, project_contracts_summary
+        s = monthly_summary()
+        contracts = project_contracts_summary()
+        return {
+            "current_month": s["current_month"],
+            "total_paid": s["total_paid"],
+            "total_expected": s["total_expected"],
+            "collection_rate": s["collection_rate"],
+            "overdue_count": len(s["overdue"]),
+            "pending_count": len(s["pending"]),
+            "months": s["months"][:6],
+            "contracts": contracts[:8],
+        }
+    except Exception:
+        return {"current_month": "", "total_paid": 0, "total_expected": 0, "collection_rate": 0, "overdue_count": 0, "pending_count": 0, "months": [], "contracts": []}
+
+
+def gsc_trend_overview() -> dict:
+    try:
+        from app.integrations.gsc_storage import get_gsc_daily_trend, get_ga4_daily_trend
+        # Try to get stored trends (no API call)
+        gsc = get_gsc_daily_trend(days=28)
+        ga4 = get_ga4_daily_trend(days=28)
+        return {"gsc": gsc, "ga4": ga4}
+    except Exception:
+        return {"gsc": {"dates": [], "clicks": [], "impressions": []}, "ga4": {"dates": [], "sessions": []}}
+
+
 def overview() -> dict:
     """Everything the dashboard needs, in one round-trip."""
     counts = {}
@@ -239,8 +332,22 @@ def overview() -> dict:
         "memories": "SELECT COUNT(*) AS c FROM memories",
         "events": "SELECT COUNT(*) AS c FROM events",
         "connections": "SELECT COUNT(*) AS c FROM integrations WHERE status='connected'",
+        "crm_contacts": "SELECT COUNT(*) AS c FROM crm_contacts WHERE status != 'archived'",
+        "crm_deals": "SELECT COUNT(*) AS c FROM crm_deals WHERE stage NOT IN ('won','lost')",
+        "notifications": "SELECT COUNT(*) AS c FROM notifications WHERE is_read=0",
     }.items():
-        counts[key] = db.query_one(sql)["c"]
+        try:
+            counts[key] = db.query_one(sql)["c"]
+        except Exception:
+            counts[key] = 0
+
+    # Overdue tasks quick count
+    try:
+        now = time.time()
+        overdue = db.query_one("SELECT COUNT(*) AS c FROM tasks WHERE due_at IS NOT NULL AND due_at < ? AND status NOT IN ('done','cancelled')", (now,))["c"]
+        counts["overdue_tasks"] = overdue
+    except Exception:
+        counts["overdue_tasks"] = 0
 
     return {
         "counts": counts,
@@ -252,4 +359,11 @@ def overview() -> dict:
         "approvals": approvals_summary(),
         "projects": project_health(),
         "kpis": kpi_overview(),
+        "crm": crm_overview(),
+        "notifications": notifications_summary(),
+        "content": content_overview(),
+        "business": business_overview(),
+        "sales": sales_overview(),
+        "financial": financial_overview(),
+        "gsc_trend": gsc_trend_overview(),
     }
