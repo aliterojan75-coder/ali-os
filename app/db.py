@@ -260,7 +260,7 @@ CREATE TABLE IF NOT EXISTS project_people (
 );
 
 -- ─── Phase 2: Integrations / secret management (§20) ───────────────────────
--- credentials_json is Fernet-encrypted at rest; the key lives only in env.
+-- credentials_json is Fernet-encrypted at rest and the key lives only in env.
 CREATE TABLE IF NOT EXISTS integrations (
     id              INTEGER PRIMARY KEY,
     project_id      INTEGER REFERENCES projects(id),

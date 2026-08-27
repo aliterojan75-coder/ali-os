@@ -25,6 +25,151 @@ def _is_turso_enabled() -> bool:
     return bool(os.environ.get("TURSO_DATABASE_URL"))
 
 
+def _strip_sql_comments(sql: str) -> str:
+    """Remove single-line (--) and multi-line (/* */) SQL comments while
+    preserving quotes/strings/identifiers."""
+    out = []
+    i = 0
+    n = len(sql)
+    in_single_quote = False
+    in_double_quote = False
+
+    while i < n:
+        c = sql[i]
+        nxt = sql[i + 1] if i + 1 < n else ""
+
+        if in_single_quote:
+            out.append(c)
+            if c == "'":
+                if nxt == "'":
+                    out.append(nxt)
+                    i += 2
+                    continue
+                else:
+                    in_single_quote = False
+            i += 1
+            continue
+
+        if in_double_quote:
+            out.append(c)
+            if c == '"':
+                if nxt == '"':
+                    out.append(nxt)
+                    i += 2
+                    continue
+                else:
+                    in_double_quote = False
+            i += 1
+            continue
+
+        if c == "'":
+            in_single_quote = True
+            out.append(c)
+            i += 1
+            continue
+
+        if c == '"':
+            in_double_quote = True
+            out.append(c)
+            i += 1
+            continue
+
+        # Single-line comment: -- ...
+        if c == "-" and nxt == "-":
+            i += 2
+            while i < n and sql[i] != "\n":
+                i += 1
+            if i < n and sql[i] == "\n":
+                out.append("\n")
+                i += 1
+            continue
+
+        # Multi-line comment: /* ... */
+        if c == "/" and nxt == "*":
+            i += 2
+            while i + 1 < n and not (sql[i] == "*" and sql[i + 1] == "/"):
+                i += 1
+            i += 2  # skip */
+            out.append(" ")
+            continue
+
+        out.append(c)
+        i += 1
+
+    return "".join(out)
+
+
+def _split_statements(script: str) -> list[str]:
+    """Split a SQL script into individual statements by semicolon ';',
+    respecting single/double quotes so semicolons inside string literals
+    or identifiers are preserved."""
+    cleaned = _strip_sql_comments(script)
+
+    statements = []
+    current = []
+    in_single_quote = False
+    in_double_quote = False
+    i = 0
+    n = len(cleaned)
+
+    while i < n:
+        c = cleaned[i]
+        nxt = cleaned[i + 1] if i + 1 < n else ""
+
+        if in_single_quote:
+            current.append(c)
+            if c == "'":
+                if nxt == "'":
+                    current.append(nxt)
+                    i += 2
+                    continue
+                else:
+                    in_single_quote = False
+            i += 1
+            continue
+
+        if in_double_quote:
+            current.append(c)
+            if c == '"':
+                if nxt == '"':
+                    current.append(nxt)
+                    i += 2
+                    continue
+                else:
+                    in_double_quote = False
+            i += 1
+            continue
+
+        if c == "'":
+            in_single_quote = True
+            current.append(c)
+            i += 1
+            continue
+
+        if c == '"':
+            in_double_quote = True
+            current.append(c)
+            i += 1
+            continue
+
+        if c == ";":
+            stmt = "".join(current).strip()
+            if stmt:
+                statements.append(stmt)
+            current = []
+            i += 1
+            continue
+
+        current.append(c)
+        i += 1
+
+    trailing = "".join(current).strip()
+    if trailing:
+        statements.append(trailing)
+
+    return statements
+
+
 class _Row(dict):
     """A row that supports both r['col'] and r['col'] (sqlite3.Row style)."""
     def __getitem__(self, key):  # type: ignore[override]
@@ -43,7 +188,9 @@ class TursoCursor:
 
     def execute(self, sql: str, params: tuple | list = ()) -> "TursoCursor":
         # Normalise libsql-incompatible bits
-        stripped = sql.strip()
+        stripped = _strip_sql_comments(sql).strip()
+        if not stripped:
+            return self
         if stripped.lower().startswith("pragma "):
             return self  # no-op over HTTP
         # INSERT … RETURNING id lets us recover last insert id without
@@ -54,9 +201,11 @@ class TursoCursor:
             and " returning " not in stripped.lower()
         )
         if wants_id:
-            sql = sql.rstrip().rstrip(";") + " RETURNING id"
+            sql_exec = stripped.rstrip().rstrip(";") + " RETURNING id"
+        else:
+            sql_exec = stripped
 
-        result = self.conn._pipeline(stripped if not wants_id else sql, list(params))
+        result = self.conn._pipeline(sql_exec, list(params))
         if not result.get("results"):
             return self
         res = result["results"][0]
@@ -79,8 +228,7 @@ class TursoCursor:
         # Split into individual statements and run them in one pipeline batch.
         # PRAGMAs are not supported over the HTTP API and are skipped.
         stmts: list[tuple[str, list]] = []
-        for raw in script.split(";"):
-            s = raw.strip()
+        for s in _split_statements(script):
             if not s:
                 continue
             if s.lower().startswith("pragma "):
