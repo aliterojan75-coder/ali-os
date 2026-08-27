@@ -277,6 +277,74 @@ CREATE TABLE IF NOT EXISTS integrations (
     UNIQUE (project_id, service)
 );
 
+-- ─── Phase 2: CRM (§14) + Notifications (§18) + PM Agent (§11) ───────────────
+CREATE TABLE IF NOT EXISTS crm_contacts (
+    id              INTEGER PRIMARY KEY,
+    contact_uid     TEXT UNIQUE NOT NULL,
+    project_id      INTEGER REFERENCES projects(id),
+    name            TEXT NOT NULL,
+    company         TEXT,
+    role            TEXT,
+    phone           TEXT,
+    email           TEXT,
+    telegram        TEXT,
+    status          TEXT DEFAULT 'lead',  -- lead | prospect | customer | partner | archived
+    tags            TEXT DEFAULT '[]',
+    notes           TEXT,
+    source          TEXT,
+    owner           TEXT DEFAULT 'Ali',
+    created_by      INTEGER REFERENCES users(id),
+    last_contact_at REAL,
+    created_at      REAL NOT NULL,
+    updated_at      REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS crm_interactions (
+    id                  INTEGER PRIMARY KEY,
+    interaction_uid     TEXT UNIQUE NOT NULL,
+    contact_id          INTEGER NOT NULL REFERENCES crm_contacts(id) ON DELETE CASCADE,
+    project_id          INTEGER REFERENCES projects(id),
+    type                TEXT NOT NULL DEFAULT 'note',  -- call | meeting | message | note | email
+    summary             TEXT NOT NULL,
+    content             TEXT,
+    outcome             TEXT,
+    next_action         TEXT,
+    next_follow_up_at   REAL,
+    created_by          INTEGER REFERENCES users(id),
+    created_at          REAL NOT NULL,
+    updated_at          REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS crm_deals (
+    id                  INTEGER PRIMARY KEY,
+    deal_uid            TEXT UNIQUE NOT NULL,
+    contact_id          INTEGER REFERENCES crm_contacts(id) ON DELETE SET NULL,
+    project_id          INTEGER REFERENCES projects(id),
+    title               TEXT NOT NULL,
+    amount              REAL DEFAULT 0,
+    currency            TEXT DEFAULT 'IRT',
+    stage               TEXT DEFAULT 'lead',  -- lead | qualified | proposal | negotiation | won | lost
+    probability         INTEGER DEFAULT 50,
+    expected_close_at   REAL,
+    notes               TEXT,
+    created_by          INTEGER REFERENCES users(id),
+    created_at          REAL NOT NULL,
+    updated_at          REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS notifications (
+    id                  INTEGER PRIMARY KEY,
+    notification_uid    TEXT UNIQUE NOT NULL,
+    user_id             INTEGER REFERENCES users(id),
+    type                TEXT NOT NULL,  -- overdue_task | approval_expiring | crm_followup | hot_task | deal_closing | etc
+    title               TEXT NOT NULL,
+    body                TEXT,
+    related_type        TEXT,
+    related_id          TEXT,
+    is_read             INTEGER DEFAULT 0,
+    created_at          REAL NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_integrations_project ON integrations(project_id);
 CREATE INDEX IF NOT EXISTS idx_integrations_service ON integrations(service);
 CREATE INDEX IF NOT EXISTS idx_pending_status ON pending_actions(status);
@@ -289,6 +357,15 @@ CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project_id);
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type);
+CREATE INDEX IF NOT EXISTS idx_crm_contacts_project ON crm_contacts(project_id);
+CREATE INDEX IF NOT EXISTS idx_crm_contacts_status ON crm_contacts(status);
+CREATE INDEX IF NOT EXISTS idx_crm_interactions_contact ON crm_interactions(contact_id);
+CREATE INDEX IF NOT EXISTS idx_crm_interactions_followup ON crm_interactions(next_follow_up_at);
+CREATE INDEX IF NOT EXISTS idx_crm_deals_project ON crm_deals(project_id);
+CREATE INDEX IF NOT EXISTS idx_crm_deals_stage ON crm_deals(stage);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(is_read);
+CREATE INDEX IF NOT EXISTS idx_notifications_type ON notifications(type);
 """
 
 

@@ -420,6 +420,438 @@ def integrations_delete(integration_id: int):
     return jsonify({"ok": True})
 
 
+
+# ── PM Agent: Morning report (§11) ──────────────────────────────────────────
+
+@api.get("/morning")
+@api.get("/pm/morning")
+def morning_report():
+    """Morning report with Jalali calendar and smart prioritization."""
+    from app.agents.pm_agent import generate_morning_report
+
+    project_slug = request.args.get("project")
+    project_id = None
+    if project_slug:
+        p = repo.get_project(project_slug)
+        project_id = p["id"] if p else None
+
+    telegram_id = (g.telegram_user or {}).get("id")
+    user = repo.get_user(telegram_id) if telegram_id else None
+
+    report = generate_morning_report(
+        user_id=user["id"] if user else None,
+        project_id=project_id,
+    )
+    return jsonify({"ok": True, "report": report})
+
+
+@api.get("/pm/prioritized")
+def prioritized_tasks_api():
+    from app.agents.pm_agent import prioritized_tasks
+
+    project_slug = request.args.get("project")
+    project_id = None
+    if project_slug:
+        p = repo.get_project(project_slug)
+        project_id = p["id"] if p else None
+    limit = min(int(request.args.get("limit", 20)), 100)
+    tasks = prioritized_tasks(project_id=project_id, limit=limit)
+    return jsonify({"ok": True, "tasks": tasks})
+
+
+# ── CRM (§14) ────────────────────────────────────────────────────────────────
+
+@api.get("/crm/contacts")
+def crm_list_contacts():
+    from app.crm.repository import list_contacts
+
+    project_slug = request.args.get("project")
+    project_id = None
+    if project_slug:
+        p = repo.get_project(project_slug)
+        project_id = p["id"] if p else None
+    status = request.args.get("status")
+    search = request.args.get("q") or request.args.get("search")
+    limit = min(int(request.args.get("limit", 50)), 200)
+    rows = list_contacts(project_id=project_id, status=status, search=search, limit=limit)
+    return jsonify({"ok": True, "contacts": [dict(r) for r in rows]})
+
+
+@api.post("/crm/contacts")
+def crm_create_contact():
+    from app import approvals
+
+    body = request.get_json(silent=True) or {}
+    name = (body.get("name") or "").strip()
+    if not name:
+        return jsonify({"ok": False, "error": "name is required"}), 400
+
+    project_id = None
+    slug = body.get("project_slug")
+    if slug:
+        p = repo.get_project(slug)
+        project_id = p["id"] if p else None
+
+    telegram_id = (g.telegram_user or {}).get("id")
+    user = repo.get_user(telegram_id) if telegram_id else None
+
+    res = approvals.request_action(
+        action_type="crm.create_contact",
+        title=f"مخاطب جدید: {name}",
+        summary=body.get("company") or body.get("notes"),
+        payload={
+            "name": name,
+            "project_id": project_id,
+            "company": body.get("company"),
+            "role": body.get("role"),
+            "phone": body.get("phone"),
+            "email": body.get("email"),
+            "telegram": body.get("telegram"),
+            "status": body.get("status", "lead"),
+            "tags": body.get("tags"),
+            "notes": body.get("notes"),
+            "source": body.get("source"),
+            "owner": body.get("owner", "Ali"),
+            "created_by": user["id"] if user else None,
+        },
+        requested_by=user["id"] if user else None,
+        project_id=project_id,
+        agent="miniapp",
+    )
+    if res.executed:
+        # Fetch created contact (last one)
+        from app.crm.repository import list_contacts
+        contacts = list_contacts(project_id=project_id, limit=1)
+        return jsonify({"ok": True, "executed": True, "contact": dict(contacts[0]) if contacts else None, "result": res.result})
+    else:
+        return jsonify({"ok": True, "executed": False, "action_uid": res.action_uid, "message": res.message})
+
+
+@api.get("/crm/contacts/<contact_uid>")
+def crm_get_contact(contact_uid: str):
+    from app.crm.repository import get_contact, list_interactions, list_deals
+
+    contact = get_contact(contact_uid)
+    if not contact:
+        return jsonify({"ok": False, "error": "not found"}), 404
+    interactions = [dict(r) for r in list_interactions(contact_id=contact["id"], limit=30)]
+    deals = [dict(r) for r in list_deals(contact_id=contact["id"], limit=20)]
+    return jsonify({"ok": True, "contact": dict(contact), "interactions": interactions, "deals": deals})
+
+
+@api.post("/crm/contacts/<contact_uid>")
+def crm_update_contact(contact_uid: str):
+    from app import approvals
+
+    body = request.get_json(silent=True) or {}
+    if not body:
+        return jsonify({"ok": False, "error": "no fields"}), 400
+
+    telegram_id = (g.telegram_user or {}).get("id")
+    user = repo.get_user(telegram_id) if telegram_id else None
+    contact_payload = {"contact_uid": contact_uid}
+    for k in ("name", "company", "role", "phone", "email", "telegram", "status", "tags", "notes", "source", "owner", "project_id"):
+        if k in body:
+            contact_payload[k] = body[k]
+
+    res = approvals.request_action(
+        action_type="crm.update_contact",
+        title=f"ویرایش مخاطب: {contact_uid}",
+        payload=contact_payload,
+        requested_by=user["id"] if user else None,
+        agent="miniapp",
+    )
+    if res.executed:
+        from app.crm.repository import get_contact
+        c = get_contact(contact_uid)
+        return jsonify({"ok": True, "executed": True, "contact": dict(c) if c else None})
+    else:
+        return jsonify({"ok": True, "executed": False, "action_uid": res.action_uid, "message": res.message})
+
+
+@api.delete("/crm/contacts/<contact_uid>")
+def crm_delete_contact(contact_uid: str):
+    from app import approvals
+
+    telegram_id = (g.telegram_user or {}).get("id")
+    user = repo.get_user(telegram_id) if telegram_id else None
+
+    res = approvals.request_action(
+        action_type="crm.delete_contact",
+        title=f"حذف مخاطب: {contact_uid}",
+        payload={"contact_uid": contact_uid},
+        requested_by=user["id"] if user else None,
+        agent="miniapp",
+    )
+    if res.executed:
+        return jsonify({"ok": True, "executed": True})
+    else:
+        return jsonify({"ok": True, "executed": False, "action_uid": res.action_uid, "message": res.message})
+
+
+@api.get("/crm/interactions")
+def crm_list_interactions():
+    from app.crm.repository import list_interactions, upcoming_followups
+
+    project_slug = request.args.get("project")
+    project_id = None
+    if project_slug:
+        p = repo.get_project(project_slug)
+        project_id = p["id"] if p else None
+
+    if request.args.get("upcoming") == "1":
+        within = int(request.args.get("days", 7))
+        overdue_only = request.args.get("overdue") == "1"
+        if overdue_only:
+            rows = upcoming_followups(project_id=project_id, overdue_only=True, limit=50)
+        else:
+            rows = upcoming_followups(project_id=project_id, within_days=within, limit=50)
+        return jsonify({"ok": True, "interactions": [dict(r) for r in rows]})
+
+    contact_id = request.args.get("contact_id")
+    if contact_id:
+        try:
+            contact_id = int(contact_id)
+        except ValueError:
+            contact_id = None
+    limit = min(int(request.args.get("limit", 30)), 200)
+    rows = list_interactions(contact_id=contact_id, project_id=project_id, limit=limit)
+    return jsonify({"ok": True, "interactions": [dict(r) for r in rows]})
+
+
+@api.post("/crm/interactions")
+def crm_create_interaction():
+    from app import approvals
+    from app.crm.repository import get_contact
+
+    body = request.get_json(silent=True) or {}
+    summary = (body.get("summary") or "").strip()
+    if not summary:
+        return jsonify({"ok": False, "error": "summary is required"}), 400
+
+    contact_id = body.get("contact_id")
+    contact_uid = body.get("contact_uid")
+    if contact_uid and not contact_id:
+        c = get_contact(contact_uid)
+        if not c:
+            return jsonify({"ok": False, "error": "contact not found"}), 404
+        contact_id = c["id"]
+    if not contact_id:
+        return jsonify({"ok": False, "error": "contact_id or contact_uid required"}), 400
+
+    project_id = None
+    slug = body.get("project_slug")
+    if slug:
+        p = repo.get_project(slug)
+        project_id = p["id"] if p else None
+
+    telegram_id = (g.telegram_user or {}).get("id")
+    user = repo.get_user(telegram_id) if telegram_id else None
+
+    res = approvals.request_action(
+        action_type="crm.add_interaction",
+        title=f"تعامل جدید: {summary[:40]}",
+        payload={
+            "contact_id": contact_id,
+            "project_id": project_id,
+            "type": body.get("type", "note"),
+            "summary": summary,
+            "content": body.get("content"),
+            "outcome": body.get("outcome"),
+            "next_action": body.get("next_action"),
+            "next_follow_up_at": body.get("next_follow_up_at"),
+            "created_by": user["id"] if user else None,
+        },
+        requested_by=user["id"] if user else None,
+        project_id=project_id,
+        agent="miniapp",
+    )
+    if res.executed:
+        return jsonify({"ok": True, "executed": True, "result": res.result})
+    else:
+        return jsonify({"ok": True, "executed": False, "action_uid": res.action_uid})
+
+
+@api.get("/crm/deals")
+def crm_list_deals():
+    from app.crm.repository import list_deals
+
+    project_slug = request.args.get("project")
+    project_id = None
+    if project_slug:
+        p = repo.get_project(project_slug)
+        project_id = p["id"] if p else None
+    stage = request.args.get("stage")
+    contact_id = request.args.get("contact_id")
+    if contact_id:
+        try:
+            contact_id = int(contact_id)
+        except ValueError:
+            contact_id = None
+    limit = min(int(request.args.get("limit", 50)), 200)
+    rows = list_deals(project_id=project_id, contact_id=contact_id, stage=stage, limit=limit)
+    return jsonify({"ok": True, "deals": [dict(r) for r in rows]})
+
+
+@api.post("/crm/deals")
+def crm_create_deal():
+    from app import approvals
+    from app.crm.repository import get_contact
+
+    body = request.get_json(silent=True) or {}
+    title = (body.get("title") or "").strip()
+    if not title:
+        return jsonify({"ok": False, "error": "title is required"}), 400
+
+    contact_id = body.get("contact_id")
+    if body.get("contact_uid") and not contact_id:
+        c = get_contact(body["contact_uid"])
+        if c:
+            contact_id = c["id"]
+
+    project_id = None
+    slug = body.get("project_slug")
+    if slug:
+        p = repo.get_project(slug)
+        project_id = p["id"] if p else None
+
+    telegram_id = (g.telegram_user or {}).get("id")
+    user = repo.get_user(telegram_id) if telegram_id else None
+
+    res = approvals.request_action(
+        action_type="crm.create_deal",
+        title=f"معامله جدید: {title}",
+        payload={
+            "title": title,
+            "contact_id": contact_id,
+            "project_id": project_id,
+            "amount": body.get("amount", 0),
+            "currency": body.get("currency", "IRT"),
+            "stage": body.get("stage", "lead"),
+            "probability": body.get("probability", 50),
+            "expected_close_at": body.get("expected_close_at"),
+            "notes": body.get("notes"),
+            "created_by": user["id"] if user else None,
+        },
+        requested_by=user["id"] if user else None,
+        project_id=project_id,
+        agent="miniapp",
+    )
+    if res.executed:
+        return jsonify({"ok": True, "executed": True, "result": res.result})
+    else:
+        return jsonify({"ok": True, "executed": False, "action_uid": res.action_uid})
+
+
+@api.post("/crm/deals/<deal_uid>")
+def crm_update_deal(deal_uid: str):
+    from app import approvals
+
+    body = request.get_json(silent=True) or {}
+    if not body:
+        return jsonify({"ok": False, "error": "no fields"}), 400
+
+    telegram_id = (g.telegram_user or {}).get("id")
+    user = repo.get_user(telegram_id) if telegram_id else None
+
+    # If only stage is being updated, use specific action
+    action_type = "crm.update_deal"
+    if set(body.keys()) <= {"stage", "probability"}:
+        action_type = "crm.update_deal_stage"
+
+    payload = {"deal_uid": deal_uid}
+    payload.update(body)
+
+    res = approvals.request_action(
+        action_type=action_type,
+        title=f"ویرایش معامله: {deal_uid}",
+        payload=payload,
+        requested_by=user["id"] if user else None,
+        agent="miniapp",
+    )
+    if res.executed:
+        from app.crm.repository import get_deal
+        d = get_deal(deal_uid)
+        return jsonify({"ok": True, "executed": True, "deal": dict(d) if d else None})
+    else:
+        return jsonify({"ok": True, "executed": False, "action_uid": res.action_uid})
+
+
+@api.delete("/crm/deals/<deal_uid>")
+def crm_delete_deal(deal_uid: str):
+    from app import approvals
+
+    telegram_id = (g.telegram_user or {}).get("id")
+    user = repo.get_user(telegram_id) if telegram_id else None
+
+    res = approvals.request_action(
+        action_type="crm.delete_deal",
+        title=f"حذف معامله: {deal_uid}",
+        payload={"deal_uid": deal_uid},
+        requested_by=user["id"] if user else None,
+        agent="miniapp",
+    )
+    if res.executed:
+        return jsonify({"ok": True, "executed": True})
+    else:
+        return jsonify({"ok": True, "executed": False, "action_uid": res.action_uid})
+
+
+@api.get("/crm/stats")
+def crm_stats_api():
+    from app.crm.repository import crm_stats
+
+    project_slug = request.args.get("project")
+    project_id = None
+    if project_slug:
+        p = repo.get_project(project_slug)
+        project_id = p["id"] if p else None
+    stats = crm_stats(project_id=project_id)
+    return jsonify({"ok": True, "stats": stats})
+
+
+# ── Notifications (§18) ──────────────────────────────────────────────────────
+
+@api.get("/notifications")
+def notifications_list():
+    from app.notifications.service import generate_notifications, list_persisted_notifications, get_notification_summary
+
+    project_slug = request.args.get("project")
+    project_id = None
+    if project_slug:
+        p = repo.get_project(project_slug)
+        project_id = p["id"] if p else None
+
+    telegram_id = (g.telegram_user or {}).get("id")
+    user = repo.get_user(telegram_id) if telegram_id else None
+
+    live = generate_notifications(user_id=user["id"] if user else None, project_id=project_id, limit=100)
+    persisted = list_persisted_notifications(user_id=user["id"] if user else None, limit=50)
+    summary = get_notification_summary(user_id=user["id"] if user else None, project_id=project_id)
+
+    return jsonify({"ok": True, "live": live, "persisted": persisted, "summary": summary})
+
+
+@api.post("/notifications/<notification_uid>/read")
+def notifications_mark_read(notification_uid: str):
+    from app.notifications.service import mark_as_read
+
+    ok = mark_as_read(notification_uid)
+    if not ok:
+        return jsonify({"ok": False, "error": "not found"}), 404
+    return jsonify({"ok": True})
+
+
+@api.post("/notifications/read-all")
+def notifications_mark_all_read():
+    from app.notifications.service import mark_all_read
+
+    telegram_id = (g.telegram_user or {}).get("id")
+    user = repo.get_user(telegram_id) if telegram_id else None
+    count = mark_all_read(user_id=user["id"] if user else None)
+    return jsonify({"ok": True, "marked": count})
+
+
 @api.get("/health")
 def health():
     return jsonify({"ok": True, "model": config.LLM_MODEL})

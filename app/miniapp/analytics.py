@@ -228,6 +228,30 @@ def velocity() -> dict:
     }
 
 
+def crm_overview() -> dict:
+    try:
+        from app.crm.repository import crm_stats
+        return crm_stats()
+    except Exception:
+        return {
+            "contacts_total": 0,
+            "contacts_by_status": {},
+            "deals_total": 0,
+            "deals_by_stage": {},
+            "open_deals_amount": 0,
+            "won_amount": 0,
+            "overdue_followups": 0,
+        }
+
+
+def notifications_summary() -> dict:
+    try:
+        from app.notifications.service import get_notification_summary
+        return get_notification_summary()
+    except Exception:
+        return {"total": 0, "by_type": {}, "by_severity": {}, "high_priority": 0, "persisted_unread": 0, "has_critical": False}
+
+
 def overview() -> dict:
     """Everything the dashboard needs, in one round-trip."""
     counts = {}
@@ -239,8 +263,22 @@ def overview() -> dict:
         "memories": "SELECT COUNT(*) AS c FROM memories",
         "events": "SELECT COUNT(*) AS c FROM events",
         "connections": "SELECT COUNT(*) AS c FROM integrations WHERE status='connected'",
+        "crm_contacts": "SELECT COUNT(*) AS c FROM crm_contacts WHERE status != 'archived'",
+        "crm_deals": "SELECT COUNT(*) AS c FROM crm_deals WHERE stage NOT IN ('won','lost')",
+        "notifications": "SELECT COUNT(*) AS c FROM notifications WHERE is_read=0",
     }.items():
-        counts[key] = db.query_one(sql)["c"]
+        try:
+            counts[key] = db.query_one(sql)["c"]
+        except Exception:
+            counts[key] = 0
+
+    # Overdue tasks quick count
+    try:
+        now = time.time()
+        overdue = db.query_one("SELECT COUNT(*) AS c FROM tasks WHERE due_at IS NOT NULL AND due_at < ? AND status NOT IN ('done','cancelled')", (now,))["c"]
+        counts["overdue_tasks"] = overdue
+    except Exception:
+        counts["overdue_tasks"] = 0
 
     return {
         "counts": counts,
@@ -252,4 +290,6 @@ def overview() -> dict:
         "approvals": approvals_summary(),
         "projects": project_health(),
         "kpis": kpi_overview(),
+        "crm": crm_overview(),
+        "notifications": notifications_summary(),
     }

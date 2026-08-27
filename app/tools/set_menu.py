@@ -28,13 +28,16 @@ def set_menu_button() -> bool:
     return True
 
 
-# Slash commands shown in the Telegram "/" menu (Phase 2).
+# Slash commands shown in the Telegram "/" menu (Phase 2 + Phase 2 completion).
 BOT_COMMANDS = [
     {"command": "start", "description": "معرفی و راهنما"},
     {"command": "tasks", "description": "Taskهای باز"},
     {"command": "approvals", "description": "صف تأیید (اقدامات در انتظار)"},
     {"command": "dossier", "description": "پرونده کامل پروژه — /dossier giahkade"},
     {"command": "connections", "description": "اتصال‌ها (وردپرس، گوگل، تلگرام…)"},
+    {"command": "morning", "description": "گزارش صبحگاهی با تقویم شمسی"},
+    {"command": "crm", "description": "مخاطبان و معاملات CRM"},
+    {"command": "notify", "description": "اعلان‌ها — تسک معوق، تأیید، CRM"},
 ]
 
 

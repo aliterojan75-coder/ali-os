@@ -3,7 +3,7 @@
 > این سند پاسخ به خواسته‌های ۲۳گانه است: چه چیزی قابل پیاده‌سازی است، چقدر سخت است،
 > چه وابستگی خارجی دارد و در چه فازی باید ساخته شود.
 
-## ⚡️ وضعیت فعلی پروژه (به‌روزشده: ۲۰۲۶-۰۸-۲۷)
+## ⚡️ وضعیت فعلی پروژه (به‌روزشده: ۲۰۲۶-۰۸-۲۷ — فاز ۲ کامل شد)
 
 - [x] فیکس Mini App (احراز هویت خودکفا بدون telegram.org) — `app/miniapp/static/index.html` امروز به main اضافه شد
 - [x] همین ROADMAP.md به مخزن اضافه شد
@@ -80,7 +80,45 @@
 
 **تست:** ۶۶ تست پایتون + ۳۰ بررسی رندر واقعی در `tests/ui/`.
 
-> قدم بعدی فاز ۲: CRM پایه + PM Agent (گزارش صبحگاهی) + Content Agent.
+### ✅ قدم ۴ فاز ۲ — PM Agent + CRM + Notifications (انجام شد — ۲۰۲۶-۰۸-۲۷)
+
+**PM Agent (§11) — گزارش صبحگاهی با تقویم شمسی:**
+- `app/utils/jalali.py` — تبدیل دقیق Gregorian ↔ Jalali با الگوریتم Borkowski (بدون وابستگی خارجی)
+  - تست‌شده با تاریخ‌های مرجع jalaali-js: 2023-03-21 = 1402-01-01
+  - نام ماه‌ها، روزهای هفته، اعداد فارسی، امروز به وقت تهران
+- `app/agents/pm_agent.py` — منطق اولویت‌بندی هوشمند:
+  - امتیاز = وزن اولویت (urgent 100 / high 70 / normal 30 / low 10) + وزن وضعیت + معوق/امروز/فردا + سن تسک
+  - `prioritized_tasks()` — لیست مرتب با `_priority_score` و تاریخ شمسی موعد
+  - `generate_morning_report()` — معوق، امروز، فردا، فوری، صف تأیید، تأییدهای در حال انقضا، پیگیری CRM، سلامت پروژه، velocity
+  - `format_morning_report_telegram()` — خروجی Markdown برای تلگرام
+  - دستور `/morning` / «گزارش صبحگاهی» + پاپ‌آپ در داشبورد (`/api/morning`)
+
+**CRM پایه (§14):**
+- جداول `crm_contacts` (uid, project_id, نام، شرکت، نقش، تلفن، ایمیل، تلگرام، وضعیت، تگ‌ها، یادداشت، منبع، مالک، آخرین تماس)
+- `crm_interactions` (uid, contact_id, project_id, نوع call/meeting/message/note/email، خلاصه، محتوا، نتیجه، اقدام بعدی، موعد پیگیری)
+- `crm_deals` (uid, contact_id, project_id, عنوان، مبلغ، ارز، مرحله lead/qualified/proposal/negotiation/won/lost، احتمال، موعد بسته شدن)
+- `app/crm/repository.py` — CRUD کامل + جستجو + پیگیری‌های پیش رو/معوق + آمار `crm_stats()`
+- اتصال به سیستم تأیید (§19): ایجاد 🟢، ویرایش 🟡، حذف مخاطب/معامله 🔴 (دو تأیید)
+- اجراکننده‌ها در `app/approvals/actions.py` — ۸ اکشن جدید
+- API: `GET/POST /api/crm/contacts`, `GET /api/crm/contacts/<uid>`, `POST/DELETE`, `GET/POST /api/crm/interactions`, `GET/POST /api/crm/deals`, `GET /api/crm/stats`
+- دستور `/crm` + تب CRM در داشبورد (۸ تب کل) با شیت ایجاد مخاطب/معامله و شیت جزئیات + پیگیری‌ها
+
+**Notification System (§18):**
+- `app/notifications/service.py` — تولید زنده اعلان‌ها از وضعیت DB:
+  - تسک معوق (urgent/high = high severity)، موعد امروز/فردا، تسک فوری بدون موعد
+  - تأییدهای در حال انقضا (<۲ ساعت) و منقضی‌شده
+  - پیگیری CRM معوق و پیش رو (۲ روز آینده)
+- جدول `notifications` برای ذخیره اعلان‌های دستی + خوانده/نخوانده
+- `GET /api/notifications` — live + persisted + summary
+- `POST /api/notifications/<uid>/read` و `/read-all`
+- دستور `/notify` + تب اعلان در داشبورد + بج روی تب‌ها + کارت پیش‌نمایش اعلان‌های بحرانی در خلاصه
+- به‌روزرسانی `app/miniapp/analytics.py` — `crm` و `notifications` در overview + counts جدید
+
+**تست:** ۱۱۱ تست سبز (۶۶ قبلی + ۲۲ جدید CRM/PM/Notifications/Jalali + ۲۳ Turso).
+
+> قدم بعدی فاز ۲: Content Agent + اتوماسیون گزارش صبحگاهی با cron-job.org (endpoint امن `/internal/cron`).
+
+
 
 ---
 

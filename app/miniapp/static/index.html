@@ -160,7 +160,7 @@
     background:rgba(10,14,24,.82);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
     border-top:1px solid var(--line);
     padding:7px 8px calc(7px + env(safe-area-inset-bottom));
-    display:grid;grid-template-columns:repeat(6,1fr);gap:2px}
+    display:grid;grid-template-columns:repeat(8,1fr);gap:2px;overflow-x:auto}
   nav.tabs button{background:transparent;border:0;color:var(--muted-2);position:relative;
     font-family:inherit;font-size:9.5px;font-weight:700;padding:7px 2px;border-radius:14px;
     display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;
@@ -311,10 +311,18 @@
         <div>
           <h2 style="margin:0">سلام <span id="uname">علی</span> 👋</h2>
           <div class="sub" id="date"></div>
+          <div class="sub" id="jalaliDate" style="margin-top:2px;color:var(--brand)"></div>
         </div>
+        <button class="btn sm" onclick="openMorningReport()" style="white-space:nowrap">🌅 گزارش صبحگاهی</button>
       </div>
       <div class="vel" id="velocity"></div>
       <div class="muted-s" id="model" style="margin-top:10px"></div>
+    </div>
+
+    <div class="card" id="notifPreviewCard" style="display:none">
+      <h2><span class="ico">🔔</span> اعلان‌های مهم <span class="right" id="notifPreviewCount"></span></h2>
+      <div class="list" id="notifPreview"></div>
+      <button class="btn sm ghost" style="width:100%;margin-top:8px" onclick="document.querySelector('nav.tabs button[data-v=notifications]').click()">دیدن همه اعلان‌ها</button>
     </div>
 
     <div class="card">
@@ -393,6 +401,39 @@
       <div id="apSummary"></div>
       <div class="sep"></div>
       <div class="list" id="apList"></div>
+    </div>
+  </section>
+
+  <!-- ═══ CRM ═══ -->
+  <section class="view" id="v-crm">
+    <div class="card">
+      <h2><span class="ico">👥</span> CRM — مخاطبان و معاملات <span class="right" id="crmCount"></span></h2>
+      <div class="stats" id="crmStats"></div>
+      <div class="sep"></div>
+      <div class="seg" id="crmSeg">
+        <button class="on" data-f="contacts">مخاطبان</button>
+        <button data-f="deals">معاملات</button>
+        <button data-f="followups">پیگیری‌ها</button>
+      </div>
+      <div class="list" id="crmList"></div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn sm" style="flex:1" onclick="openCrmContactSheet()">➕ مخاطب جدید</button>
+        <button class="btn sm ghost" style="flex:1" onclick="openCrmDealSheet()">💼 معامله جدید</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ NOTIFICATIONS ═══ -->
+  <section class="view" id="v-notifications">
+    <div class="card">
+      <h2><span class="ico">🔔</span> اعلان‌ها <span class="right" id="notifCount"></span></h2>
+      <div id="notifSummary"></div>
+      <div class="sep"></div>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <button class="btn sm ghost" style="flex:1" onclick="markAllNotifRead()">✅ همه خوانده شد</button>
+        <button class="btn sm ghost" style="flex:1" onclick="loadNotifications()">🔄 بروزرسانی</button>
+      </div>
+      <div class="list" id="notifList"></div>
     </div>
   </section>
 
@@ -488,13 +529,94 @@
   </div>
 </div>
 
+<!-- Morning Report Sheet -->
+<div class="sheet-back" id="morningBack">
+  <div class="sheet">
+    <div class="sheet-grip"></div>
+    <div class="sheet-h">
+      <strong id="morningTitle">🌅 گزارش صبحگاهی</strong>
+      <button class="x" id="morningClose">✕</button>
+    </div>
+    <div id="morningBody"></div>
+  </div>
+</div>
+
+<!-- CRM Contact Sheet -->
+<div class="sheet-back" id="crmContactBack">
+  <div class="sheet">
+    <div class="sheet-grip"></div>
+    <div class="sheet-h">
+      <strong>👥 مخاطب جدید / ویرایش</strong>
+      <button class="x" id="crmContactClose">✕</button>
+    </div>
+    <div id="crmContactBody">
+      <div class="field"><label>نام *</label><input id="cc-name" placeholder="مثلاً: علی رضایی" /></div>
+      <div class="grid2">
+        <div class="field"><label>شرکت</label><input id="cc-company" placeholder="Net Nova" /></div>
+        <div class="field"><label>نقش</label><input id="cc-role" placeholder="مدیر" /></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>تلفن</label><input id="cc-phone" placeholder="۰۹۱۲..." /></div>
+        <div class="field"><label>ایمیل</label><input id="cc-email" type="email" placeholder="ali@example.com" /></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>تلگرام</label><input id="cc-telegram" placeholder="@username" /></div>
+        <div class="field"><label>وضعیت</label><select id="cc-status"><option value="lead">سرنخ</option><option value="prospect">مشتری بالقوه</option><option value="customer">مشتری</option><option value="partner">شریک</option><option value="archived">آرشیو</option></select></div>
+      </div>
+      <div class="field"><label>پروژه</label><select id="cc-project"><option value="">بدون پروژه</option></select></div>
+      <div class="field"><label>یادداشت</label><textarea id="cc-notes" placeholder="توضیحات..."></textarea></div>
+      <div style="display:flex;gap:10px"><button class="btn" id="cc-save" style="flex:1">ذخیره</button><button class="btn ghost" id="cc-cancel">انصراف</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- CRM Deal Sheet -->
+<div class="sheet-back" id="crmDealBack">
+  <div class="sheet">
+    <div class="sheet-grip"></div>
+    <div class="sheet-h">
+      <strong>💼 معامله جدید</strong>
+      <button class="x" id="crmDealClose">✕</button>
+    </div>
+    <div id="crmDealBody">
+      <div class="field"><label>عنوان *</label><input id="cd-title" placeholder="مثلاً: پروژه سایت گیاهکده" /></div>
+      <div class="grid2">
+        <div class="field"><label>مبلغ</label><input id="cd-amount" type="number" placeholder="۰" /></div>
+        <div class="field"><label>ارز</label><select id="cd-currency"><option value="IRT">تومان</option><option value="IRR">ریال</option><option value="USD">دلار</option></select></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>مرحله</label><select id="cd-stage"><option value="lead">سرنخ</option><option value="qualified">واجد شرایط</option><option value="proposal">پیشنهاد</option><option value="negotiation">مذاکره</option><option value="won">برنده</option><option value="lost">باخته</option></select></div>
+        <div class="field"><label>احتمال ٪</label><input id="cd-prob" type="number" min="0" max="100" value="50" /></div>
+      </div>
+      <div class="field"><label>مخاطب (UID)</label><input id="cd-contact" placeholder="اختیاری - contact_uid" /></div>
+      <div class="field"><label>پروژه</label><select id="cd-project"><option value="">بدون پروژه</option></select></div>
+      <div class="field"><label>یادداشت</label><textarea id="cd-notes"></textarea></div>
+      <div style="display:flex;gap:10px"><button class="btn" id="cd-save" style="flex:1">ذخیره</button><button class="btn ghost" id="cd-cancel">انصراف</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- CRM Detail Sheet -->
+<div class="sheet-back" id="crmDetailBack">
+  <div class="sheet">
+    <div class="sheet-grip"></div>
+    <div class="sheet-h">
+      <strong id="crmDetailTitle">پرونده مخاطب</strong>
+      <button class="x" id="crmDetailClose">✕</button>
+    </div>
+    <div id="crmDetailBody"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <nav class="tabs">
   <button data-v="overview" class="active"><span class="ti">◈</span>خلاصه</button>
   <button data-v="tasks"><span class="ti">✓</span>تسک‌ها</button>
   <button data-v="projects"><span class="ti">▦</span>پروژه‌ها</button>
+  <button data-v="crm"><span class="ti">👥</span>CRM</button>
   <button data-v="approvals"><span class="ti">🔐</span>تأیید</button>
+  <button data-v="notifications"><span class="ti">🔔</span>اعلان</button>
   <button data-v="conn"><span class="ti">🔌</span>اتصال</button>
   <button data-v="more"><span class="ti">⋯</span>بیشتر</button>
 </nav>
@@ -735,20 +857,69 @@ async function loadOverview(){
     ? hot.map(t=>taskItem(t,true)).join('')
     : emptyState('🎉','هیچ کار فوری‌ای نمانده');
 
+  // CRM quick stats in overview (if exists)
+  try{
+    if(d.crm){
+      const cs = d.crm;
+      // Could add a card, but for now just log
+    }
+    if(d.counts && $('#jalaliDate') && d.counts){
+      // Try to get jalali from morning endpoint quickly if not already
+      // We'll fetch morning report's date
+      if(!$('#jalaliDate').textContent){
+        try{
+          const mr = await api('/api/morning');
+          if(mr.report && mr.report.date) $('#jalaliDate').textContent = mr.report.date.jalali_str + ' — ' + mr.report.date.tehran_time;
+        }catch(e){}
+      }
+    }
+  }catch(e){}
+
+  // Load notification preview
+  try{ await loadNotifPreview(); }catch(e){}
+
   updateBadges();
 }
 
 function updateBadges(){
   if(!ANALYTICS) return;
+  // Approvals
   const n = ANALYTICS.approvals.pending;
   const btn = document.querySelector('nav.tabs button[data-v="approvals"]');
-  if(!btn) return;
-  const old = btn.querySelector('.nb');
-  if(old) old.remove();
-  if(n>0){
-    const b=document.createElement('span');
-    b.className='nb'; b.textContent=fa(n);
-    btn.appendChild(b);
+  if(btn){
+    const old = btn.querySelector('.nb');
+    if(old) old.remove();
+    if(n>0){
+      const b=document.createElement('span');
+      b.className='nb'; b.textContent=fa(n);
+      btn.appendChild(b);
+    }
+  }
+  // Notifications
+  const notif = ANALYTICS.notifications ? ANALYTICS.notifications.total : 0;
+  const notifBtn = document.querySelector('nav.tabs button[data-v="notifications"]');
+  if(notifBtn){
+    const old = notifBtn.querySelector('.nb');
+    if(old) old.remove();
+    if(notif>0){
+      const b=document.createElement('span');
+      b.className='nb'; b.textContent=fa(notif);
+      b.style.background='var(--warn)';
+      notifBtn.appendChild(b);
+    }
+  }
+  // CRM overdue
+  const crmOverdue = ANALYTICS.crm ? ANALYTICS.crm.overdue_followups : 0;
+  const crmBtn = document.querySelector('nav.tabs button[data-v="crm"]');
+  if(crmBtn){
+    const old = crmBtn.querySelector('.nb');
+    if(old) old.remove();
+    if(crmOverdue>0){
+      const b=document.createElement('span');
+      b.className='nb'; b.textContent=fa(crmOverdue);
+      b.style.background='var(--brand)';
+      crmBtn.appendChild(b);
+    }
   }
 }
 
@@ -803,6 +974,12 @@ async function loadProjects(){
   window._projects = d.projects;
   const sel = $('#t-project');
   if(sel) sel.innerHTML = '<option value="">بدون پروژه</option>' +
+    d.projects.map(p=>`<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('');
+  const sel2 = $('#cc-project');
+  if(sel2) sel2.innerHTML = '<option value="">بدون پروژه</option>' +
+    d.projects.map(p=>`<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('');
+  const sel3 = $('#cd-project');
+  if(sel3) sel3.innerHTML = '<option value="">بدون پروژه</option>' +
     d.projects.map(p=>`<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('');
   return d.projects;
 }
@@ -1177,9 +1354,279 @@ async function removeConn(id){
   }catch(e){ toast('خطا: '+e.message,'err'); }
 }
 
+
+/* ---------- morning report (PM Agent §11) ---------- */
+async function openMorningReport(){
+  $('#morningBack').classList.add('open');
+  $('#morningBody').innerHTML = skeleton(4);
+  try{
+    const r = await api('/api/morning');
+    const rep = r.report;
+    const d = rep.date;
+    let h = `<div class="muted-s" style="margin-bottom:10px">📅 ${esc(d.jalali_str)} — ${esc(d.gregorian)} — ${esc(d.tehran_time)}</div>`;
+    h += `<div class="stats" style="margin-bottom:12px">
+      <div class="stat ${rep.counts.overdue_tasks?'hot':''}"><div class="n">${fa(rep.counts.overdue_tasks)}</div><div class="l">معوق</div></div>
+      <div class="stat"><div class="n">${fa(rep.counts.due_today)}</div><div class="l">امروز</div></div>
+      <div class="stat ${rep.counts.hot_tasks?'warn':''}"><div class="n">${fa(rep.counts.hot_tasks)}</div><div class="l">فوری</div></div>
+      <div class="stat ${rep.counts.pending_approvals?'hot':''}"><div class="n">${fa(rep.counts.pending_approvals)}</div><div class="l">تأیید</div></div>
+    </div>`;
+
+    if(rep.overdue_tasks && rep.overdue_tasks.length){
+      h += `<div class="muted-s" style="font-weight:700;margin:10px 0 6px">⚠️ معوق</div><div class="list">`+
+        rep.overdue_tasks.slice(0,5).map(t=>`<div class="item hot"><div class="t">${esc(t.title)}</div><div class="meta">${pBadge(t.project_name)}${prBadge(t.priority)}</div></div>`).join('')+`</div>`;
+    }
+    if(rep.due_today && rep.due_today.length){
+      h += `<div class="muted-s" style="font-weight:700;margin:10px 0 6px">📅 امروز</div><div class="list">`+
+        rep.due_today.slice(0,5).map(t=>`<div class="item"><div class="t">${esc(t.title)}</div><div class="meta">${pBadge(t.project_name)}${prBadge(t.priority)}</div></div>`).join('')+`</div>`;
+    }
+    if(rep.prioritized_tasks && rep.prioritized_tasks.length){
+      h += `<div class="muted-s" style="font-weight:700;margin:10px 0 6px">🎯 اولویت‌بندی هوشمند</div><div class="list">`+
+        rep.prioritized_tasks.slice(0,8).map((t,i)=>`<div class="item"><div class="top"><div class="t">${fa(i+1)}. ${esc(t.title)}</div><span class="badge b-normal">${fa(t._priority_score)}</span></div><div class="meta">${pBadge(t.project_name)}${prBadge(t.priority)}${t._due_jalali?`<span>${esc(t._due_jalali)}</span>`:''}</div></div>`).join('')+`</div>`;
+    }
+    if(rep.pending_approvals && rep.pending_approvals.length){
+      h += `<div class="muted-s" style="font-weight:700;margin:10px 0 6px">🔐 صف تأیید</div><div class="list">`+
+        rep.pending_approvals.slice(0,5).map(a=>`<div class="item"><div class="t">${esc(a.title)}</div><div class="meta"><span>${esc(a.risk)}</span></div></div>`).join('')+`</div>`;
+    }
+    if(rep.crm_overdue && rep.crm_overdue.length){
+      h += `<div class="muted-s" style="font-weight:700;margin:10px 0 6px">👥 پیگیری CRM معوق</div><div class="list">`+
+        rep.crm_overdue.slice(0,5).map(f=>`<div class="item"><div class="t">${esc(f.contact_name)} — ${esc(f.summary)}</div></div>`).join('')+`</div>`;
+    }
+    if(rep.crm_followups && rep.crm_followups.length){
+      h += `<div class="muted-s" style="font-weight:700;margin:10px 0 6px">📞 پیگیری‌های پیش رو</div><div class="list">`+
+        rep.crm_followups.slice(0,5).map(f=>`<div class="item"><div class="t">${esc(f.contact_name)} — ${esc(f.summary)}</div></div>`).join('')+`</div>`;
+    }
+    h += `<div class="sep"></div><div class="muted-s">برای گزارش کامل‌تر، تب‌های تسک‌ها، CRM و اعلان‌ها را ببین.</div>`;
+    $('#morningBody').innerHTML = h;
+    // Update jalali date in header too
+    if($('#jalaliDate')) $('#jalaliDate').textContent = d.jalali_str;
+  }catch(e){
+    $('#morningBody').innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+function closeMorningReport(){ $('#morningBack').classList.remove('open'); }
+
+/* ---------- CRM (§14) ---------- */
+let currentCrmFilter='contacts';
+async function loadCrm(f){
+  currentCrmFilter = f || currentCrmFilter;
+  document.querySelectorAll('#crmSeg button').forEach(b=>b.classList.toggle('on', b.dataset.f===currentCrmFilter));
+  const list=$('#crmList');
+  list.innerHTML = skeleton(4);
+  try{
+    if(currentCrmFilter==='contacts'){
+      const data = await api('/api/crm/contacts?limit=50');
+      const items = data.contacts;
+      $('#crmCount').textContent = fa(items.length)+' مخاطب';
+      if(!items.length){ list.innerHTML = emptyState('👥','مخاطبی ثبت نشده'); return; }
+      list.innerHTML = items.map(c=>`<div class="item" onclick="openCrmDetail('${esc(c.contact_uid)}')">
+        <div class="top"><div class="t">${esc(c.name)}${c.company?' — '+esc(c.company):''}</div><span class="badge b-status">${esc(c.status)}</span></div>
+        <div class="meta">${c.phone?`<span>📞 ${esc(c.phone)}</span>`:''}${c.email?`<span>✉️ ${esc(c.email)}</span>`:''}${pBadge(c.project_name)}</div>
+        ${c.notes?`<div class="muted-s">${esc(c.notes.slice(0,80))}</div>`:''}
+      </div>`).join('');
+    } else if(currentCrmFilter==='deals'){
+      const data = await api('/api/crm/deals?limit=50');
+      const items = data.deals;
+      $('#crmCount').textContent = fa(items.length)+' معامله';
+      if(!items.length){ list.innerHTML = emptyState('💼','معامله‌ای ثبت نشده'); return; }
+      const stageLabels={lead:'سرنخ',qualified:'واجد شرایط',proposal:'پیشنهاد',negotiation:'مذاکره',won:'برنده',lost:'باخته'};
+      list.innerHTML = items.map(d=>`<div class="item">
+        <div class="top"><div class="t">${esc(d.title)}</div><span class="badge ${d.stage==='won'?'b-done':d.stage==='lost'?'b-urgent':'b-normal'}">${esc(stageLabels[d.stage]||d.stage)}</span></div>
+        <div class="meta"><span>${Charts.compact(d.amount)} ${esc(d.currency)}</span><span>${fa(d.probability)}٪ احتمال</span>${pBadge(d.project_name||d.contact_name)}</div>
+        ${d.notes?`<div class="muted-s">${esc(d.notes.slice(0,80))}</div>`:''}
+      </div>`).join('');
+    } else if(currentCrmFilter==='followups'){
+      const data = await api('/api/crm/interactions?upcoming=1&days=14');
+      const items = data.interactions;
+      $('#crmCount').textContent = fa(items.length)+' پیگیری';
+      if(!items.length){ list.innerHTML = emptyState('📅','پیگیری پیش رویی نیست'); return; }
+      list.innerHTML = items.map(f=>{
+        const isOverdue = f.next_follow_up_at && f.next_follow_up_at < (Date.now()/1000);
+        return `<div class="item ${isOverdue?'hot':''}">
+          <div class="top"><div class="t">${esc(f.contact_name)} — ${esc(f.summary)}</div>${isOverdue?'<span class="badge b-urgent">معوق</span>':''}</div>
+          <div class="meta"><span>${esc(f.type)}</span><span>${f.next_follow_up_at?timeAgo(f.next_follow_up_at):''}</span>${pBadge(f.project_name)}</div>
+        </div>`;
+      }).join('');
+    }
+  }catch(e){
+    list.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+
+function openCrmContactSheet(){
+  if(!window._projects) loadProjects();
+  const sel=$('#cc-project');
+  if(sel && window._projects){
+    sel.innerHTML = '<option value="">بدون پروژه</option>' + window._projects.map(p=>`<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('');
+  }
+  $('#crmContactBack').classList.add('open');
+}
+function closeCrmContactSheet(){ $('#crmContactBack').classList.remove('open'); }
+async function saveCrmContact(){
+  const btn=$('#cc-save');
+  const name=$('#cc-name').value.trim();
+  if(!name){ toast('نام لازم است'); return; }
+  const payload={
+    name,
+    company:$('#cc-company').value.trim()||null,
+    role:$('#cc-role').value.trim()||null,
+    phone:$('#cc-phone').value.trim()||null,
+    email:$('#cc-email').value.trim()||null,
+    telegram:$('#cc-telegram').value.trim()||null,
+    status:$('#cc-status').value,
+    project_slug:$('#cc-project').value||null,
+    notes:$('#cc-notes').value.trim()||null,
+  };
+  btn.disabled=true; btn.innerHTML='<span class="loader"></span>';
+  try{
+    const r=await api('/api/crm/contacts',{method:'POST',body:JSON.stringify(payload)});
+    if(r.executed) toast('✅ مخاطب ثبت شد','ok');
+    else toast('⏳ درخواست ثبت شد و منتظر تأیید است');
+    closeCrmContactSheet();
+    await loadCrm('contacts');
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+  finally{ btn.disabled=false; btn.textContent='ذخیره'; }
+}
+
+function openCrmDealSheet(){
+  if(!window._projects) loadProjects();
+  const sel=$('#cd-project');
+  if(sel && window._projects){
+    sel.innerHTML = '<option value="">بدون پروژه</option>' + window._projects.map(p=>`<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('');
+  }
+  $('#crmDealBack').classList.add('open');
+}
+function closeCrmDealSheet(){ $('#crmDealBack').classList.remove('open'); }
+async function saveCrmDeal(){
+  const btn=$('#cd-save');
+  const title=$('#cd-title').value.trim();
+  if(!title){ toast('عنوان لازم است'); return; }
+  const payload={
+    title,
+    amount:parseFloat($('#cd-amount').value)||0,
+    currency:$('#cd-currency').value,
+    stage:$('#cd-stage').value,
+    probability:parseInt($('#cd-prob').value)||50,
+    contact_uid:$('#cd-contact').value.trim()||null,
+    project_slug:$('#cd-project').value||null,
+    notes:$('#cd-notes').value.trim()||null,
+  };
+  btn.disabled=true; btn.innerHTML='<span class="loader"></span>';
+  try{
+    const r=await api('/api/crm/deals',{method:'POST',body:JSON.stringify(payload)});
+    if(r.executed) toast('✅ معامله ثبت شد','ok');
+    else toast('⏳ درخواست ثبت شد');
+    closeCrmDealSheet();
+    await loadCrm('deals');
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+  finally{ btn.disabled=false; btn.textContent='ذخیره'; }
+}
+
+async function openCrmDetail(uid){
+  $('#crmDetailBack').classList.add('open');
+  $('#crmDetailBody').innerHTML = skeleton(4);
+  try{
+    const data = await api('/api/crm/contacts/'+encodeURIComponent(uid));
+    const c=data.contact;
+    let h=`<div class="muted-s" style="margin-bottom:8px">${pBadge(c.project_id||'')} ${esc(c.status)} • ${c.company?esc(c.company):''}</div>`;
+    h+=`<div class="grid2"><div class="field"><label>تلفن</label><div class="muted-s">${esc(c.phone||'—')}</div></div><div class="field"><label>ایمیل</label><div class="muted-s">${esc(c.email||'—')}</div></div></div>`;
+    h+=`<div class="field"><label>تلگرام</label><div class="muted-s">${esc(c.telegram||'—')}</div></div>`;
+    if(c.notes) h+=`<div class="field"><label>یادداشت</label><div class="muted-s">${esc(c.notes)}</div></div>`;
+    h+=`<div class="sep"></div><div class="muted-s" style="font-weight:700">📞 تعاملات (${fa(data.interactions.length)})</div>`;
+    h+= data.interactions.length ? `<div class="list" style="margin-top:8px">`+data.interactions.map(i=>`<div class="item"><div class="t">${esc(i.summary)}</div><div class="meta"><span>${esc(i.type)}</span><span>${timeAgo(i.created_at)}</span></div>${i.next_action?`<div class="muted-s">بعدی: ${esc(i.next_action)}</div>`:''}</div>`).join('')+`</div>` : `<div class="muted-s">تعاملی ثبت نشده</div>`;
+    h+=`<div class="sep"></div><div class="muted-s" style="font-weight:700">💼 معاملات (${fa(data.deals.length)})</div>`;
+    h+= data.deals.length ? `<div class="list" style="margin-top:8px">`+data.deals.map(d=>`<div class="item"><div class="t">${esc(d.title)} — ${esc(d.stage)}</div><div class="meta"><span>${Charts.compact(d.amount)} ${esc(d.currency)}</span></div></div>`).join('')+`</div>` : `<div class="muted-s">معامله‌ای نیست</div>`;
+    $('#crmDetailBody').innerHTML = h;
+    $('#crmDetailTitle').textContent = '👥 '+c.name;
+  }catch(e){
+    $('#crmDetailBody').innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+function closeCrmDetail(){ $('#crmDetailBack').classList.remove('open'); }
+
+/* ---------- Notifications (§18) ---------- */
+async function loadNotifications(){
+  const list=$('#notifList');
+  const sumEl=$('#notifSummary');
+  const countEl=$('#notifCount');
+  if(list) list.innerHTML = skeleton(4);
+  try{
+    const data = await api('/api/notifications');
+    const live = data.live || [];
+    const summary = data.summary || {};
+    if(countEl) countEl.textContent = fa(live.length)+' مورد';
+    if(sumEl){
+      sumEl.innerHTML = `<div class="stats">
+        <div class="stat ${summary.high_priority?'hot':''}"><div class="n">${fa(summary.high_priority||0)}</div><div class="l">بحرانی</div></div>
+        <div class="stat"><div class="n">${fa(summary.total||0)}</div><div class="l">کل</div></div>
+        <div class="stat"><div class="n">${fa(summary.by_type?Object.keys(summary.by_type).length:0)}</div><div class="l">نوع</div></div>
+      </div>`;
+    }
+    if(!live.length){
+      if(list) list.innerHTML = emptyState('✅','هیچ اعلان فعالی نیست');
+      // hide preview card too
+      if($('#notifPreviewCard')) $('#notifPreviewCard').style.display='none';
+      return;
+    }
+    if(list){
+      list.innerHTML = live.map(n=>{
+        const sev = n.severity;
+        const badge = sev==='high' ? 'b-urgent' : sev==='medium' ? 'b-high' : 'b-normal';
+        const icon = sev==='high' ? '🔴' : sev==='medium' ? '🟡' : '🟢';
+        return `<div class="item ${sev==='high'?'hot':''}">
+          <div class="top"><div class="t">${icon} ${esc(n.title)}</div><span class="badge ${badge}">${esc(sev)}</span></div>
+          ${n.body?`<div class="muted-s">${esc(n.body)}</div>`:''}
+          <div class="meta"><span>${esc(n.type)}</span><span>${n.created_at?timeAgo(n.created_at):''}</span></div>
+        </div>`;
+      }).join('');
+    }
+    // Also update preview card in overview
+    const preview = $('#notifPreview');
+    const previewCard = $('#notifPreviewCard');
+    const previewCount = $('#notifPreviewCount');
+    if(preview && previewCard){
+      const critical = live.filter(x=>x.severity==='high').slice(0,4);
+      if(critical.length){
+        previewCard.style.display='block';
+        if(previewCount) previewCount.textContent = fa(critical.length)+' بحرانی';
+        preview.innerHTML = critical.map(n=>`<div class="item hot"><div class="t">${esc(n.title)}</div><div class="muted-s">${esc(n.body||'')}</div></div>`).join('');
+      } else {
+        previewCard.style.display='none';
+      }
+    }
+  }catch(e){
+    if(list) list.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+async function markAllNotifRead(){
+  try{
+    await api('/api/notifications/read-all',{method:'POST'});
+    toast('همه خوانده شد','ok');
+    await loadNotifications();
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+async function loadNotifPreview(){
+  try{
+    const data = await api('/api/notifications');
+    const live = data.live || [];
+    const critical = live.filter(x=>x.severity==='high').slice(0,4);
+    const previewCard = $('#notifPreviewCard');
+    if(!previewCard) return;
+    if(critical.length){
+      previewCard.style.display='block';
+      $('#notifPreviewCount').textContent = fa(critical.length)+' بحرانی';
+      $('#notifPreview').innerHTML = critical.map(n=>`<div class="item hot"><div class="t">${esc(n.title)}</div></div>`).join('');
+    } else {
+      previewCard.style.display='none';
+    }
+  }catch(e){}
+}
+
+/* ---------- navigation ---------- */
+
 /* ---------- navigation ---------- */
 const LOADERS={overview:loadOverview,tasks:()=>loadTasks(),projects:loadProjectView,
-               approvals:loadApprovals,conn:loadConnections,
+               crm:()=>loadCrm(),approvals:loadApprovals,notifications:()=>loadNotifications(),
+               conn:loadConnections,
                more:()=>{loadMemory();loadLogs();}};
 document.querySelectorAll('nav.tabs button').forEach(b=>{
   b.onclick=()=>{
@@ -1213,6 +1660,20 @@ $('#connClose').onclick=closeConn;
 $('#connBack').onclick=e=>{ if(e.target.id==='connBack') closeConn(); };
 $('#projClose').onclick=()=>$('#projBack').classList.remove('open');
 $('#projBack').onclick=e=>{ if(e.target.id==='projBack') $('#projBack').classList.remove('open'); };
+$('#morningClose').onclick=closeMorningReport;
+$('#morningBack').onclick=e=>{ if(e.target.id==='morningBack') closeMorningReport(); };
+$('#crmContactClose').onclick=closeCrmContactSheet;
+$('#crmContactBack').onclick=e=>{ if(e.target.id==='crmContactBack') closeCrmContactSheet(); };
+$('#cc-cancel').onclick=closeCrmContactSheet;
+$('#cc-save').onclick=saveCrmContact;
+$('#crmDealClose').onclick=closeCrmDealSheet;
+$('#crmDealBack').onclick=e=>{ if(e.target.id==='crmDealBack') closeCrmDealSheet(); };
+$('#cd-cancel').onclick=closeCrmDealSheet;
+$('#cd-save').onclick=saveCrmDeal;
+$('#crmDetailClose').onclick=closeCrmDetail;
+$('#crmDetailBack').onclick=e=>{ if(e.target.id==='crmDetailBack') closeCrmDetail(); };
+document.querySelectorAll('#crmSeg button').forEach(b=>b.onclick=()=>loadCrm(b.dataset.f));
+
 
 $('#t-save').onclick=async()=>{
   const title=$('#t-title').value.trim();

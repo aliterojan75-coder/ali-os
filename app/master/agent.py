@@ -74,6 +74,17 @@ class MasterAgent:
             return {"intent": "list_approvals", "confidence": 0.99, "project_slug": None}
         if low in ("/connections", "/connect", "اتصال‌ها", "اتصالها", "connections"):
             return {"intent": "list_connections", "confidence": 0.99, "project_slug": None}
+        if low in ("/morning", "گزارش صبحگاهی", "صبح بخیر", "morning", "/report", "گزارش روزانه"):
+            # Check for project after command
+            parts = text.strip().split(maxsplit=1)
+            proj = parts[1].strip() if len(parts) > 1 else None
+            return {"intent": "morning_report", "confidence": 0.99, "project_slug": proj}
+        if low in ("/crm", "crm", "مخاطبان", "مشتریان", "سی آر ام"):
+            parts = text.strip().split(maxsplit=1)
+            proj = parts[1].strip() if len(parts) > 1 else None
+            return {"intent": "crm_overview", "confidence": 0.99, "project_slug": proj}
+        if low in ("/notify", "/notifications", "اعلان‌ها", "اعلانها", "نوتیفیکیشن", "هشدارها"):
+            return {"intent": "list_notifications", "confidence": 0.99, "project_slug": None}
         if low.startswith("/dossier") or low.startswith("پرونده"):
             rest = text.strip().split(maxsplit=1)
             return {
@@ -81,6 +92,15 @@ class MasterAgent:
                 "confidence": 0.99,
                 "project_slug": rest[1].strip() if len(rest) > 1 else None,
             }
+        # Natural language triggers for new intents
+        if any(kw in low for kw in ["گزارش صبحگاهی", "morning report", "گزارش صبح"]):
+            return {"intent": "morning_report", "confidence": 0.95, "project_slug": None}
+        if any(kw in low for kw in ["لیست مخاطبان", "مخاطب جدید", "crm contact"]):
+            return {"intent": "crm_overview", "confidence": 0.85, "project_slug": None}
+        if any(kw in low for kw in ["اعلان", "نوتیف", "هشدار"]):
+            # Could be notification request
+            if len(low) < 30:
+                return {"intent": "list_notifications", "confidence": 0.8, "project_slug": None}
 
         messages = [
             LLMMessage(role="system", content=INTENT_SYSTEM),
@@ -121,6 +141,12 @@ class MasterAgent:
             return self._action_project_status(project)
         if intent == "last_decision":
             return self._action_last_decision(project)
+        if intent == "morning_report":
+            return self._action_morning_report(project, user_id)
+        if intent == "crm_overview":
+            return self._action_crm_overview(project)
+        if intent == "list_notifications":
+            return self._action_list_notifications(user_id, project)
         if intent == "help":
             return self._help_text()
 
@@ -397,6 +423,92 @@ class MasterAgent:
                 lines.append(f"    ↳ دلیل: {d['reason']}")
         return "\n".join(lines)
 
+
+    # ── PM Agent: Morning report (§11) ─────────────────────────────────────
+    def _action_morning_report(self, project, user_id: int) -> str:
+        from app.agents.pm_agent import generate_morning_report, format_morning_report_telegram
+
+        pid = project["id"] if project else None
+        report = generate_morning_report(user_id=user_id, project_id=pid)
+        text = format_morning_report_telegram(report)
+        repo.record_event(
+            "morning_report_generated", user_id=user_id,
+            project_id=pid, payload={"counts": report["counts"]},
+        )
+        return text
+
+    # ── CRM (§14) ──────────────────────────────────────────────────────────
+    def _action_crm_overview(self, project) -> str:
+        from app.crm.repository import crm_stats, list_contacts, list_deals, upcoming_followups
+
+        pid = project["id"] if project else None
+        stats = crm_stats(project_id=pid)
+        contacts = list_contacts(project_id=pid, limit=8)
+        deals = list_deals(project_id=pid, limit=8)
+        followups = upcoming_followups(project_id=pid, within_days=7, limit=5)
+        overdue = upcoming_followups(project_id=pid, overdue_only=True, limit=5)
+
+        proj_label = project["name"] if project else "همه پروژه‌ها"
+        lines = [f"👥 *CRM — {proj_label}*", ""]
+
+        lines.append(f"📇 مخاطبان: {stats['contacts_total']} کل")
+        for st, cnt in stats["contacts_by_status"].items():
+            if cnt:
+                label = {"lead": "سرنخ", "prospect": "مشتری بالقوه", "customer": "مشتری", "partner": "شریک", "archived": "آرشیو"}.get(st, st)
+                lines.append(f"  • {label}: {cnt}")
+        lines.append("")
+        lines.append(f"💼 معاملات: {stats['deals_total']} کل — باز {stats['open_deals_amount']:,.0f} IRT — برنده {stats['won_amount']:,.0f} IRT")
+        for st, cnt in stats["deals_by_stage"].items():
+            if cnt:
+                label = {"lead": "سرنخ", "qualified": "واجد شرایط", "proposal": "پیشنهاد", "negotiation": "مذاکره", "won": "برنده", "lost": "باخته"}.get(st, st)
+                lines.append(f"  • {label}: {cnt}")
+
+        if overdue:
+            lines.append(f"\n⚠️ پیگیری معوق ({len(overdue)}):")
+            for f in overdue:
+                lines.append(f"  • {f['contact_name']} — {f['summary']}")
+
+        if followups:
+            lines.append(f"\n📅 پیگیری پیش رو ({len(followups)}):")
+            for f in followups:
+                lines.append(f"  • {f['contact_name']} — {f['summary']}")
+
+        if contacts:
+            lines.append(f"\n📇 آخرین مخاطبان:")
+            for c in contacts[:5]:
+                comp = f" ({c['company']})" if c['company'] else ""
+                lines.append(f"  • {c['name']}{comp} — {c['status']}")
+
+        if deals:
+            lines.append(f"\n💰 آخرین معاملات:")
+            for d in deals[:5]:
+                lines.append(f"  • {d['title']} — {d['stage']} — {float(d['amount'] or 0):,.0f} {d['currency']}")
+
+        lines.append("\n_برای افزودن مخاطب بگو: «مخاطب جدید علی با شماره ۰۹۱۲...» یا از داشبورد تب CRM._")
+        return "\n".join(lines)
+
+    # ── Notifications (§18) ────────────────────────────────────────────────
+    def _action_list_notifications(self, user_id: int, project) -> str:
+        from app.notifications.service import generate_notifications, get_notification_summary
+
+        pid = project["id"] if project else None
+        notifs = generate_notifications(user_id=user_id, project_id=pid, limit=15)
+        summary = get_notification_summary(user_id=user_id, project_id=pid)
+
+        if not notifs:
+            return "✅ هیچ اعلان فعالی نیست — همه چیز مرتب است!"
+
+        lines = [f"🔔 *اعلان‌ها — {summary['total']} مورد* (🔴 {summary['by_severity'].get('high',0)} بحرانی)", ""]
+
+        for n in notifs:
+            emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(n["severity"], "•")
+            lines.append(f"{emoji} {n['title']}")
+            if n["body"]:
+                lines.append(f"   {n['body']}")
+
+        lines.append("\n_برای دیدن جزئیات و مدیریت، داشبورد → تب اعلان‌ها را باز کن._")
+        return "\n".join(lines)
+
     # ── Chat with full context ─────────────────────────────────────────────
     def _action_chat(self, msg: IncomingMessage, convo_id: int, project) -> str:
         projects = repo.list_projects(active_only=True)
@@ -452,7 +564,10 @@ class MasterAgent:
             "• آخرین تصمیم‌ها: «آخرین تصمیم درباره CropExport چی بود؟»\n"
             "• پرونده کامل پروژه: «پرونده گیاهکده» یا /dossier giahkade\n"
             "• صف تأیید: /approvals — اقدامات 🟡/🔴 با دکمه [✅ تأیید] [❌ لغو] در همین چت\n"
-            "• اتصال‌ها: /connections — وردپرس، کانال تلگرام، ایمیل، گوگل…\n\n"
+            "• اتصال‌ها: /connections — وردپرس، کانال تلگرام، ایمیل، گوگل…\n"
+            "• گزارش صبحگاهی: /morning — با تقویم شمسی، اولویت‌بندی هوشمند، پیگیری CRM\n"
+            "• مخاطبان و معاملات: /crm — مدیریت CRM پایه\n"
+            "• اعلان‌ها: /notify — تسک‌های معوق، تأییدهای در حال انقضا، پیگیری‌های CRM\n\n"
             "🔐 سیستم تأیید سه‌سطحی فعال است: 🟢 مستقیم اجرا می‌شود، "
             "🟡 یک تأیید و 🔴 دو تأیید از تو می‌گیرد.\n\n"
             "پروژه‌های فعلی: Net Nova، گیاهکده، E-Ferdowsi، امداد سرویس قم، CropExport، آبادگران، Sir-Siah.\n\n"
