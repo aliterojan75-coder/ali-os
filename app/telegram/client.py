@@ -53,6 +53,7 @@ def send_message(
     *,
     parse_mode: str | None = "Markdown",  # render **bold**/italic (LLM uses markdown)
     reply_to_message_id: int | None = None,
+    reply_markup: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     # Telegram has a 4096-char limit; chunk if needed. Keep < 4000 so we never
     # split mid-markdown or hit the cap.
@@ -68,6 +69,9 @@ def send_message(
             payload["parse_mode"] = parse_mode
         if i == 0 and reply_to_message_id:
             payload["reply_to_message_id"] = reply_to_message_id
+        # Buttons belong on the last chunk so they sit under the full text.
+        if reply_markup is not None and i == len(chunks) - 1:
+            payload["reply_markup"] = reply_markup
         try:
             result = _call("sendMessage", payload)
         except TelegramError:
@@ -78,6 +82,85 @@ def send_message(
             fallback["text"] = strip_markdown(chunk)
             result = _call("sendMessage", fallback)
     return result
+
+
+# ─── Inline keyboards & callback queries (Approval System §19) ──────────────
+
+def inline_keyboard(rows: list[list[dict[str, Any]]]) -> dict[str, Any]:
+    """Build a Telegram InlineKeyboardMarkup from rows of buttons."""
+    return {"inline_keyboard": rows}
+
+
+def button(text: str, callback_data: str) -> dict[str, Any]:
+    # Telegram hard-limits callback_data to 64 bytes.
+    data = callback_data.encode("utf-8")[:64].decode("utf-8", "ignore")
+    return {"text": text, "callback_data": data}
+
+
+def answer_callback_query(
+    callback_query_id: str,
+    text: str | None = None,
+    *,
+    show_alert: bool = False,
+) -> dict[str, Any]:
+    """Stop the button's loading spinner and optionally show a toast/alert."""
+    payload: dict[str, Any] = {"callback_query_id": callback_query_id}
+    if text:
+        # Telegram caps notification text at 200 chars.
+        payload["text"] = text[:200]
+    if show_alert:
+        payload["show_alert"] = True
+    return _call("answerCallbackQuery", payload)
+
+
+def edit_message_text(
+    chat_id: int,
+    message_id: int,
+    text: str,
+    *,
+    parse_mode: str | None = "Markdown",
+    reply_markup: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Rewrite an already-sent message (used to freeze approval cards)."""
+    payload: dict[str, Any] = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "text": text[:3900],
+        "disable_web_page_preview": True,
+    }
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
+    # An empty inline_keyboard removes the buttons.
+    payload["reply_markup"] = reply_markup if reply_markup is not None else {"inline_keyboard": []}
+    try:
+        return _call("editMessageText", payload)
+    except TelegramError as exc:
+        if "message is not modified" in str(exc):
+            return {}
+        fallback = dict(payload)
+        fallback.pop("parse_mode", None)
+        fallback["text"] = strip_markdown(text)[:3900]
+        return _call("editMessageText", fallback)
+
+
+def parse_callback_query(update: dict[str, Any]) -> dict[str, Any] | None:
+    """Normalise a callback_query update (inline button press) into a dict."""
+    cq = update.get("callback_query")
+    if not cq:
+        return None
+    from_user = cq.get("from", {}) or {}
+    msg = cq.get("message", {}) or {}
+    chat = msg.get("chat", {}) or {}
+    return {
+        "callback_query_id": cq.get("id"),
+        "data": cq.get("data") or "",
+        "user_id": from_user.get("id"),
+        "username": from_user.get("username"),
+        "first_name": from_user.get("first_name"),
+        "chat_id": chat.get("id"),
+        "message_id": msg.get("message_id"),
+        "message_text": msg.get("text") or "",
+    }
 
 
 def strip_markdown(text: str) -> str:

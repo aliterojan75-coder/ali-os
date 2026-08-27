@@ -37,6 +37,13 @@
 | `LLM_API_KEY` | کلید API مدل (`dahl_E7WfdWXaKf35yQxGdHY5mq5sjfuUANSmn`) |
 | `TURSO_DATABASE_URL` | `libsql://ali-os-aliterojan75-coder.aws-ap-northeast-1.turso.io` |
 | `TURSO_AUTH_TOKEN` | توکن خواندن/نوشتن Turso که ساختی |
+| `ENCRYPTION_KEY` | کلید رمزنگاری اطلاعات اتصال‌ها — با `python -m app.tools.gen_key` بساز |
+
+> ⚠️ **درباره‌ی `ENCRYPTION_KEY`:** این کلید رمزهای وردپرس/گوگل/SMTP را رمزنگاری می‌کند.
+> تا وقتی ست نشود، Ali OS عمداً از ذخیره‌ی هر اطلاعات محرمانه‌ای خودداری می‌کند
+> (به‌جای اینکه آن را بدون رمز ذخیره کند). اگر بعداً این کلید را عوض کنی،
+> اتصال‌های ذخیره‌شده‌ی قبلی قابل خواندن نیستند و باید دوباره وارد شوند.
+> این کلید را جایی امن نگه دار و هرگز در گیت نگذار.
 
 مقادیر زیر از قبل در `render.yaml` ست شده‌اند و لازم نیست کاری کنی:
 - `LLM_BASE_URL=https://inference.dahl.global/v1`

@@ -279,3 +279,229 @@ def record_event(event_type: str, *, user_id: int | None = None,
         "INSERT INTO events (event_type, user_id, project_id, payload_json, created_at) VALUES (?, ?, ?, ?, ?)",
         (event_type, user_id, project_id, json.dumps(payload or {}, ensure_ascii=False), db.now()),
     )
+
+
+# ─── Pending actions / Approval System (§19) ────────────────────────────────
+
+RISK_LEVELS = ("green", "yellow", "red")
+RISK_EMOJI = {"green": "🟢", "yellow": "🟡", "red": "🔴"}
+RISK_LABEL_FA = {"green": "کم‌خطر", "yellow": "نیازمند تأیید", "red": "پرخطر"}
+
+PENDING_STATUSES = (
+    "pending", "confirming", "approved", "rejected",
+    "expired", "executed", "failed",
+)
+OPEN_STATUSES = ("pending", "confirming")
+
+
+def create_pending_action(
+    *,
+    action_type: str,
+    title: str,
+    risk: str = "yellow",
+    summary: str | None = None,
+    payload: dict | None = None,
+    requested_by: int | None = None,
+    project_id: int | None = None,
+    agent: str = "master",
+    chat_id: int | None = None,
+    approvals_required: int = 1,
+    ttl_seconds: float | None = None,
+    status: str = "pending",
+) -> sqlite3.Row:
+    risk = risk if risk in RISK_LEVELS else "yellow"
+    t = db.now()
+    uid = db.new_uid("act")
+    expires_at = (t + ttl_seconds) if ttl_seconds else None
+    cur = db.execute(
+        """INSERT INTO pending_actions
+           (action_uid, action_type, title, summary, payload_json, risk, status,
+            requested_by, project_id, agent, chat_id, approvals_required,
+            approvals_count, expires_at, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)""",
+        (uid, action_type, title, summary,
+         json.dumps(payload or {}, ensure_ascii=False),
+         risk, status, requested_by, project_id, agent, chat_id,
+         max(1, int(approvals_required)), expires_at, t, t),
+    )
+    return db.query_one("SELECT * FROM pending_actions WHERE id=?", (cur.lastrowid,))
+
+
+def get_pending_action(action_uid: str) -> sqlite3.Row | None:
+    return db.query_one(
+        """SELECT a.*, p.name AS project_name, p.slug AS project_slug
+           FROM pending_actions a LEFT JOIN projects p ON p.id=a.project_id
+           WHERE a.action_uid=?""",
+        (action_uid,),
+    )
+
+
+def list_pending_actions(
+    *,
+    requested_by: int | None = None,
+    project_id: int | None = None,
+    status: str | None = None,
+    open_only: bool = True,
+    limit: int = 20,
+) -> list[sqlite3.Row]:
+    sql = ("SELECT a.*, p.name AS project_name, p.slug AS project_slug "
+           "FROM pending_actions a LEFT JOIN projects p ON p.id=a.project_id WHERE 1=1")
+    params: list[Any] = []
+    if status:
+        sql += " AND a.status=?"
+        params.append(status)
+    elif open_only:
+        sql += " AND a.status IN ('pending','confirming')"
+    if requested_by is not None:
+        sql += " AND a.requested_by=?"
+        params.append(requested_by)
+    if project_id is not None:
+        sql += " AND a.project_id=?"
+        params.append(project_id)
+    sql += (" ORDER BY CASE a.risk WHEN 'red' THEN 0 WHEN 'yellow' THEN 1 ELSE 2 END,"
+            " a.created_at DESC LIMIT ?")
+    params.append(limit)
+    return db.query_all(sql, tuple(params))
+
+
+def update_pending_action(action_uid: str, **fields: Any) -> sqlite3.Row | None:
+    allowed = {
+        "status", "approvals_count", "decided_by", "decided_at",
+        "result_json", "error", "message_id", "chat_id", "expires_at",
+    }
+    sets, params = [], []
+    for key, value in fields.items():
+        if key not in allowed:
+            continue
+        sets.append(f"{key}=?")
+        params.append(value)
+    if not sets:
+        return get_pending_action(action_uid)
+    sets.append("updated_at=?")
+    params.extend([db.now(), action_uid])
+    db.execute(f"UPDATE pending_actions SET {', '.join(sets)} WHERE action_uid=?", tuple(params))
+    return get_pending_action(action_uid)
+
+
+def expire_stale_actions(now_ts: float | None = None) -> int:
+    """Mark open actions whose TTL has passed as expired. Returns the count."""
+    t = now_ts if now_ts is not None else db.now()
+    rows = db.query_all(
+        "SELECT action_uid FROM pending_actions "
+        "WHERE status IN ('pending','confirming') AND expires_at IS NOT NULL AND expires_at < ?",
+        (t,),
+    )
+    for r in rows:
+        db.execute(
+            "UPDATE pending_actions SET status='expired', updated_at=? WHERE action_uid=?",
+            (t, r["action_uid"]),
+        )
+    return len(rows)
+
+
+def action_payload(row: Any) -> dict:
+    try:
+        return json.loads(row["payload_json"] or "{}")
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+# ─── Project dossier: KPIs / budget / people (§2) ───────────────────────────
+
+def add_kpi(*, project_id: int, name: str, target_value: float | None = None,
+            current_value: float | None = None, unit: str | None = None,
+            period: str = "monthly", direction: str = "up",
+            notes: str | None = None) -> sqlite3.Row:
+    t = db.now()
+    cur = db.execute(
+        """INSERT INTO project_kpis
+           (project_id, name, target_value, current_value, unit, period, direction, notes, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (project_id, name, target_value, current_value, unit, period, direction, notes, t, t),
+    )
+    return db.query_one("SELECT * FROM project_kpis WHERE id=?", (cur.lastrowid,))
+
+
+def list_kpis(project_id: int) -> list[sqlite3.Row]:
+    return db.query_all(
+        "SELECT * FROM project_kpis WHERE project_id=? ORDER BY name", (project_id,)
+    )
+
+
+def update_kpi_value(kpi_id: int, current_value: float) -> None:
+    db.execute(
+        "UPDATE project_kpis SET current_value=?, updated_at=? WHERE id=?",
+        (current_value, db.now(), kpi_id),
+    )
+
+
+def add_budget_line(*, project_id: int, label: str, amount: float,
+                    category: str | None = None, currency: str = "IRT",
+                    kind: str = "expense", period: str | None = None,
+                    spent: float = 0, notes: str | None = None) -> sqlite3.Row:
+    t = db.now()
+    cur = db.execute(
+        """INSERT INTO project_budget
+           (project_id, label, category, amount, currency, kind, period, spent, notes, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (project_id, label, category, amount, currency, kind, period, spent, notes, t, t),
+    )
+    return db.query_one("SELECT * FROM project_budget WHERE id=?", (cur.lastrowid,))
+
+
+def list_budget(project_id: int) -> list[sqlite3.Row]:
+    return db.query_all(
+        "SELECT * FROM project_budget WHERE project_id=? ORDER BY kind, label", (project_id,)
+    )
+
+
+def add_person(*, project_id: int, name: str, role: str | None = None,
+               contact: str | None = None, responsibility: str | None = None,
+               is_internal: bool = True, notes: str | None = None) -> sqlite3.Row:
+    t = db.now()
+    cur = db.execute(
+        """INSERT INTO project_people
+           (project_id, name, role, contact, responsibility, is_internal, notes, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (project_id, name, role, contact, responsibility, 1 if is_internal else 0, notes, t, t),
+    )
+    return db.query_one("SELECT * FROM project_people WHERE id=?", (cur.lastrowid,))
+
+
+def list_people(project_id: int) -> list[sqlite3.Row]:
+    return db.query_all(
+        "SELECT * FROM project_people WHERE project_id=? ORDER BY is_internal DESC, name",
+        (project_id,),
+    )
+
+
+def project_dossier(project: Any) -> dict:
+    """Assemble the full project file (§2): identity, KPIs, budget, people,
+    open tasks, recent decisions, memories and pending approvals."""
+    pid = project["id"]
+    try:
+        metadata = json.loads(project["metadata_json"] or "{}")
+    except Exception:  # noqa: BLE001
+        metadata = {}
+    budget = [dict(b) for b in list_budget(pid)]
+    totals: dict[str, dict[str, float]] = {}
+    for line in budget:
+        cur = totals.setdefault(line["currency"] or "IRT",
+                                {"planned": 0.0, "spent": 0.0, "income": 0.0})
+        if line["kind"] == "income":
+            cur["income"] += float(line["amount"] or 0)
+        else:
+            cur["planned"] += float(line["amount"] or 0)
+            cur["spent"] += float(line["spent"] or 0)
+    return {
+        "project": dict(project),
+        "metadata": metadata,
+        "kpis": [dict(k) for k in list_kpis(pid)],
+        "budget": budget,
+        "budget_totals": totals,
+        "people": [dict(p) for p in list_people(pid)],
+        "open_tasks": [dict(t) for t in list_tasks(project_id=pid, limit=50)],
+        "decisions": [dict(d) for d in list_decisions(project_id=pid, limit=5)],
+        "memories": [dict(m) for m in search_memory(project_id=pid, limit=15)],
+        "pending_actions": [dict(a) for a in list_pending_actions(project_id=pid, limit=10)],
+    }

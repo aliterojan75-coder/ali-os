@@ -23,12 +23,61 @@ Telegram → Webhook → Flask/Gunicorn → Master Agent → LLM + Memory + Task
   - احراز هویت با امضای HMAC رسمی تلگرام (`initData`)
   - باز شدن از دکمه منوی بات (Menu Button)
 
+## Phase 2 — در حال ساخت
+- ✅ **Approval System سه‌سطحی (§19)** — 🟢 اجرای مستقیم، 🟡 یک تأیید، 🔴 تأیید دو مرحله‌ای
+  - جدول `pending_actions` + دکمه‌های Inline تلگرام `[✅ تأیید] [❌ لغو]` + هندل `callback_query`
+  - هیچ Agentی بدون رکورد تأییدشده عملیات 🟡/🔴 اجرا نمی‌کند
+  - کارت تأیید بعد از تصمیم قفل می‌شود → audit trail داخل خود چت
+  - دستور `/approvals` برای دیدن صف تأیید
+  - 📖 مستند کامل: [`docs/APPROVALS.md`](docs/APPROVALS.md)
+- ✅ **پرونده‌ی کامل پروژه (§2)** — KPI، بودجه، افراد + Task/تصمیم/حافظه/تأییدهای باز
+  - دستور `/dossier <پروژه>` یا «پرونده گیاهکده»
+  - `GET /api/projects/<slug>/dossier`
+- ✅ **اتصال‌ها / مدیریت Secret (§20)** — ورودی‌ها را از داخل خود اپ می‌گیرد
+  - تب «🔌 اتصال‌ها» در داشبورد: فرم‌ها از روی کاتالوگ سرویس‌ها خودکار ساخته می‌شوند
+  - رمزنگاری Fernet روی credentialها؛ API فقط مقدار ماسک‌شده برمی‌گرداند
+  - **تست زنده‌ی اتصال** بلافاصله بعد از ذخیره (وردپرس، کانال تلگرام، SMTP، OAuth گوگل)
+  - سرویس‌های مسدود (Google Ads/GBP/Instagram) با دلیل روشن نمایش داده می‌شوند
+  - دستور `/connections` + 📖 [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md)
+- ✅ **WordPress Agent (§3)** — پیش‌نویس/ویرایش 🟡، انتشار/حذف 🔴، فیلدهای Rank Math،
+  و `content_index()` برای جلوگیری از Cannibalization
+- ✅ **بازطراحی کامل داشبورد (UI/UX)** — نمودار، انیمیشن، و ناوبری ۶ تبی
+  - نمودار خطی روند ۱۴ روزه (ایجاد در برابر انجام)، دونات وضعیت، گیج KPI،
+    نوار اولویت، هیت‌مپ فعالیت ۸ هفته، نوار انباشته‌ی تأییدها
+  - **همه‌ی نمودارها SVG درون‌خطی‌اند — بدون CDN و بدون کتابخانه‌ی بیرونی**،
+    چون داشبورد باید روی شبکه‌هایی که CDN را بلاک می‌کنند هم کامل بالا بیاید
+  - اسکلت لودینگ، بازخورد لمسی (Haptic)، شیت پرونده‌ی پروژه، بج شمارنده روی تب تأیید
+  - اعداد فارسی در کل رابط، RTL کامل، احترام به `prefers-reduced-motion`
+- ⬜ CRM پایه، PM Agent، Content Agent
+
+## دستورات تلگرام
+| دستور | کار |
+|-------|-----|
+| `/start` | معرفی و راهنما |
+| `/tasks` یا «کارها» | Taskهای باز |
+| `/approvals` | صف اقدامات در انتظار تأیید |
+| `/dossier <پروژه>` | پرونده‌ی کامل پروژه |
+| `/connections` | وضعیت اتصال‌ها (وردپرس، گوگل، تلگرام…) |
+
+بقیه‌ی تعامل زبان طبیعی است؛ Intent Router خودش تشخیص می‌دهد.
+
+## تست
+
+```bash
+python -m pytest tests -q      # ۶۶ تست پایتون — بدون شبکه، بدون تلگرام واقعی
+
+# تست رابط کاربری (نیازمند سرور در حال اجرا + npm install jsdom)
+node tests/ui/dashboard.test.mjs   # ۳۰ بررسی رندر واقعی نمودارها
+node tests/ui/fallback.test.mjs    # داشبورد بدون charts.js هم باید کار کند
+```
+
 ## پنل مدیریت (Mini App)
 - مسیر: `GET /` (یا `/app`) → SPA
 - API: `GET/POST /api/*` با هدر `X-Telegram-Init-Data`
 - ابزارها:
   - `python -m app.tools.set_webhook`
-  - `python -m app.tools.set_menu` (دکمه منوی Mini App)
+  - `python -m app.tools.set_menu` (دکمه منوی Mini App + ثبت دستورات `/`)
+  - `python -m app.tools.gen_key` (ساخت `ENCRYPTION_KEY` برای اتصال‌ها — یک‌بار)
 
 ## اجرا
 

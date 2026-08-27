@@ -187,6 +187,103 @@ CREATE TABLE IF NOT EXISTS tool_calls (
     created_at      REAL NOT NULL
 );
 
+-- ─── Phase 2: Approval System (§19) ────────────────────────────────────────
+-- Every 🟡/🔴 action an agent wants to perform is first written here and only
+-- executed after Ali approves it in Telegram. 🟢 actions are recorded too
+-- (auto_approved) so the audit trail is complete.
+CREATE TABLE IF NOT EXISTS pending_actions (
+    id                  INTEGER PRIMARY KEY,
+    action_uid          TEXT UNIQUE NOT NULL,
+    action_type         TEXT NOT NULL,
+    title               TEXT NOT NULL,
+    summary             TEXT,
+    payload_json        TEXT DEFAULT '{}',
+    risk                TEXT NOT NULL DEFAULT 'yellow',   -- green | yellow | red
+    status              TEXT NOT NULL DEFAULT 'pending',  -- pending | confirming | approved | rejected | expired | executed | failed
+    requested_by        INTEGER REFERENCES users(id),
+    project_id          INTEGER REFERENCES projects(id),
+    agent               TEXT DEFAULT 'master',
+    chat_id             INTEGER,
+    message_id          INTEGER,
+    approvals_required  INTEGER NOT NULL DEFAULT 1,
+    approvals_count     INTEGER NOT NULL DEFAULT 0,
+    decided_by          INTEGER,
+    decided_at          REAL,
+    result_json         TEXT,
+    error               TEXT,
+    expires_at          REAL,
+    created_at          REAL NOT NULL,
+    updated_at          REAL NOT NULL
+);
+
+-- ─── Phase 2: Full project dossier (§2) ────────────────────────────────────
+CREATE TABLE IF NOT EXISTS project_kpis (
+    id              INTEGER PRIMARY KEY,
+    project_id      INTEGER NOT NULL REFERENCES projects(id),
+    name            TEXT NOT NULL,
+    target_value    REAL,
+    current_value   REAL,
+    unit            TEXT,
+    period          TEXT DEFAULT 'monthly',
+    direction       TEXT DEFAULT 'up',   -- up = higher is better
+    notes           TEXT,
+    created_at      REAL NOT NULL,
+    updated_at      REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS project_budget (
+    id              INTEGER PRIMARY KEY,
+    project_id      INTEGER NOT NULL REFERENCES projects(id),
+    label           TEXT NOT NULL,
+    category        TEXT,
+    amount          REAL NOT NULL DEFAULT 0,
+    currency        TEXT DEFAULT 'IRT',
+    kind            TEXT DEFAULT 'expense',  -- expense | income | allocation
+    period          TEXT,
+    spent           REAL DEFAULT 0,
+    notes           TEXT,
+    created_at      REAL NOT NULL,
+    updated_at      REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS project_people (
+    id              INTEGER PRIMARY KEY,
+    project_id      INTEGER NOT NULL REFERENCES projects(id),
+    name            TEXT NOT NULL,
+    role            TEXT,
+    contact         TEXT,
+    responsibility  TEXT,
+    is_internal     INTEGER DEFAULT 1,
+    notes           TEXT,
+    created_at      REAL NOT NULL,
+    updated_at      REAL NOT NULL
+);
+
+-- ─── Phase 2: Integrations / secret management (§20) ───────────────────────
+-- credentials_json is Fernet-encrypted at rest; the key lives only in env.
+CREATE TABLE IF NOT EXISTS integrations (
+    id              INTEGER PRIMARY KEY,
+    project_id      INTEGER REFERENCES projects(id),
+    service         TEXT NOT NULL,
+    label           TEXT,
+    credentials_enc TEXT,
+    public_json     TEXT DEFAULT '{}',
+    status          TEXT DEFAULT 'pending',  -- pending | connected | error | disabled
+    last_error      TEXT,
+    last_checked_at REAL,
+    created_by      INTEGER,
+    created_at      REAL NOT NULL,
+    updated_at      REAL NOT NULL,
+    UNIQUE (project_id, service)
+);
+
+CREATE INDEX IF NOT EXISTS idx_integrations_project ON integrations(project_id);
+CREATE INDEX IF NOT EXISTS idx_integrations_service ON integrations(service);
+CREATE INDEX IF NOT EXISTS idx_pending_status ON pending_actions(status);
+CREATE INDEX IF NOT EXISTS idx_pending_user ON pending_actions(requested_by);
+CREATE INDEX IF NOT EXISTS idx_kpis_project ON project_kpis(project_id);
+CREATE INDEX IF NOT EXISTS idx_budget_project ON project_budget(project_id);
+CREATE INDEX IF NOT EXISTS idx_people_project ON project_people(project_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project_id);

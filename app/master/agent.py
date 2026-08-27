@@ -12,7 +12,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from app import repositories as repo
+from app import approvals, repositories as repo
+from app.approvals import risk as risk_mod
 from app.llm import LLMMessage, get_provider
 from app.llm.base import LLMProvider
 from app.logging_config import get_logger, log_event
@@ -69,6 +70,17 @@ class MasterAgent:
             return {"intent": "help", "confidence": 0.99, "project_slug": None}
         if low in ("/tasks", "کارها", "تسک‌ها", "tasks"):
             return {"intent": "list_tasks", "confidence": 0.95, "project_slug": None}
+        if low in ("/approvals", "تأییدها", "تاییدها", "approvals", "صف تأیید"):
+            return {"intent": "list_approvals", "confidence": 0.99, "project_slug": None}
+        if low in ("/connections", "/connect", "اتصال‌ها", "اتصالها", "connections"):
+            return {"intent": "list_connections", "confidence": 0.99, "project_slug": None}
+        if low.startswith("/dossier") or low.startswith("پرونده"):
+            rest = text.strip().split(maxsplit=1)
+            return {
+                "intent": "project_dossier",
+                "confidence": 0.99,
+                "project_slug": rest[1].strip() if len(rest) > 1 else None,
+            }
 
         messages = [
             LLMMessage(role="system", content=INTENT_SYSTEM),
@@ -92,7 +104,15 @@ class MasterAgent:
             project = repo.get_project(route["project_slug"])
 
         if intent == "create_task":
-            return self._action_create_task(route, project, user_id)
+            return self._action_create_task(route, project, user_id, msg.chat_id)
+        if intent == "list_approvals":
+            return self._action_list_approvals(user_id)
+        if intent == "list_connections":
+            return self._action_list_connections()
+        if intent == "project_dossier":
+            if not project:
+                return "کدوم پروژه؟ مثلاً: «پرونده گیاهکده» یا `/dossier giahkade`."
+            return self._action_project_dossier(project)
         if intent == "list_tasks":
             return self._action_list_tasks(project)
         if intent == "project_status":
@@ -108,41 +128,204 @@ class MasterAgent:
         return self._action_chat(msg, convo_id, project)
 
     # ── Actions ────────────────────────────────────────────────────────────
-    def _action_create_task(self, route: dict, project, user_id: int) -> str:
+    def _action_create_task(self, route: dict, project, user_id: int,
+                            chat_id: int | None = None) -> str:
         title = route.get("task_title") or "Task جدید"
         desc = route.get("task_description")
         priority = route.get("priority") or "normal"
         amount = route.get("amount")
         due_hint = route.get("due_hint")
 
-        # If the user asked for N items, create one parent task that mentions N
-        # (subtasks are the Content/PM agent's job in later phases).
-        created = []
+        # Every write goes through the Approval gateway (§19). task.create is
+        # 🟢 so it executes immediately — but it is still recorded and audited.
         n = int(amount) if isinstance(amount, int) and amount > 0 else 1
+        n = max(1, min(n, 20))
+        results = []
         for i in range(n):
             t_title = title if n == 1 else f"{title} ({i+1} از {n})"
-            task = repo.create_task(
-                title=t_title,
+            results.append(approvals.request_action(
+                action_type="task.create",
+                title=f"ثبت Task: {t_title}",
+                summary=desc,
+                payload={
+                    "title": t_title,
+                    "project_id": project["id"] if project else None,
+                    "description": desc,
+                    "priority": priority,
+                    "source": "telegram",
+                },
+                requested_by=user_id,
                 project_id=project["id"] if project else None,
-                description=desc,
-                priority=priority,
-                source="telegram",
-            )
-            created.append(task)
+                chat_id=chat_id,
+                agent="master",
+            ))
+
+        created = [r for r in results if r.executed]
+        failed = [r for r in results if not r.executed]
 
         repo.record_event(
             "tasks_created", user_id=user_id,
             project_id=project["id"] if project else None,
-            payload={"count": len(created), "uids": [t["task_uid"] for t in created]},
+            payload={"count": len(created), "uids": [r.action_uid for r in created]},
         )
 
         proj_name = project["name"] if project else "بدون پروژه"
         lines = [f"✅ {len(created)} Task ثبت شد.", f"📂 پروژه: {proj_name}"]
-        for t in created:
-            lines.append(f"  • [{t['priority']}] {t['title']} — {t['task_uid']}")
+        for r in created:
+            lines.append(f"  • [{priority}] {r.result}")
+        for r in failed:
+            lines.append(f"  ⚠️ {r.message}")
         if due_hint:
             lines.append(f"🕒 مهلت اشاره‌شده: {due_hint} (برای ثبت دقیق deadline بگو تا زمان را قطعی کنم).")
         lines.append("\nمی‌تونی وضعیتش رو با «کارها» ببینی.")
+        return "\n".join(lines)
+
+    # ── Approval queue (§19) ───────────────────────────────────────────────
+    def _action_list_approvals(self, user_id: int) -> str:
+        repo.expire_stale_actions()
+        user = repo.get_user(user_id)
+        items = repo.list_pending_actions(
+            requested_by=user["id"] if user else None, limit=15
+        )
+        if not items:
+            return "✅ صف تأیید خالی است — هیچ اقدامی منتظر تصمیم تو نیست."
+        lines = [f"⏳ {len(items)} اقدام در انتظار تأیید:"]
+        for a in items:
+            emoji = risk_mod.EMOJI.get(a["risk"], "🟡")
+            proj = f"[{a['project_name']}] " if a["project_name"] else ""
+            step = ""
+            if a["status"] == "confirming":
+                step = f" (تأیید {a['approvals_count']}/{a['approvals_required']})"
+            lines.append(f"{emoji} {proj}{a['title']}{step}\n     `{a['action_uid']}`")
+        lines.append("\nروی دکمه‌های همان کارت در چت [✅ تأیید] یا [❌ لغو] را بزن.")
+        return "\n".join(lines)
+
+    # ── Integrations (§20) ─────────────────────────────────────────────────
+    def _action_list_connections(self) -> str:
+        from app.integrations import catalog, crypto, store
+
+        rows = store.list_all()
+        views = [store.public_view(r) for r in rows]
+        by_service: dict[str, list] = {}
+        for v in views:
+            by_service.setdefault(v["service"], []).append(v)
+
+        lines = ["🔌 *اتصال‌های Ali OS*"]
+        if not crypto.is_configured():
+            lines.append("\n⚠️ `ENCRYPTION_KEY` روی سرور تنظیم نشده — تا تنظیم نشود، "
+                         "ذخیره‌ی اطلاعات محرمانه انجام نمی‌شود.")
+
+        connected = [v for v in views if v["status"] == "connected"]
+        errored = [v for v in views if v["status"] == "error"]
+
+        if connected:
+            lines.append("\n✅ *متصل*")
+            for v in connected:
+                scope = v["project_name"] or "عمومی"
+                lines.append(f"   • {v['icon']} {v['service_name']} — {scope}")
+        if errored:
+            lines.append("\n⚠️ *دارای خطا*")
+            for v in errored:
+                scope = v["project_name"] or "عمومی"
+                lines.append(f"   • {v['icon']} {v['service_name']} — {scope}")
+                if v["last_error"]:
+                    lines.append(f"       {v['last_error']}")
+
+        available = [s for s in catalog.SERVICES
+                     if s.available and s.slug not in by_service]
+        if available:
+            lines.append("\n➕ *آماده‌ی اتصال*")
+            for svc in available:
+                lines.append(f"   • {svc.icon} {svc.name}")
+
+        blocked = [s for s in catalog.SERVICES if not s.available]
+        if blocked:
+            lines.append("\n🔒 *فعلاً در دسترس نیست*")
+            for svc in blocked:
+                lines.append(f"   • {svc.icon} {svc.name} — {svc.blocked_reason}")
+
+        lines.append("\nبرای وصل کردن، داشبورد را باز کن → تب «اتصال‌ها». "
+                     "اطلاعات محرمانه رمزنگاری‌شده ذخیره می‌شوند.")
+        return "\n".join(lines)
+
+    # ── Full project dossier (§2) ──────────────────────────────────────────
+    def _action_project_dossier(self, project) -> str:
+        d = repo.project_dossier(project)
+        p = d["project"]
+        lines = [f"📁 *پرونده کامل پروژه: {p['name']}*"]
+        ident = []
+        if p.get("domain"):
+            ident.append(f"🌐 {p['domain']}")
+        if p.get("industry"):
+            ident.append(f"🏷 {p['industry']}")
+        ident.append(f"وضعیت: {p.get('status')}")
+        lines.append(" | ".join(ident))
+        if p.get("notes"):
+            lines.append(f"\n📝 {p['notes']}")
+
+        kpis = d["kpis"]
+        lines.append(f"\n📊 *KPIها* ({len(kpis)})")
+        if kpis:
+            for k in kpis:
+                cur_v = k["current_value"]
+                tgt = k["target_value"]
+                unit = k["unit"] or ""
+                progress = ""
+                if cur_v is not None and tgt:
+                    if k["direction"] == "up":
+                        pct = cur_v / tgt * 100
+                    else:
+                        pct = (tgt / cur_v * 100) if cur_v else 0
+                    progress = f" — {pct:.0f}٪ هدف"
+                lines.append(f"   • {k['name']}: {cur_v if cur_v is not None else '—'}"
+                             f" / {tgt if tgt is not None else '—'} {unit}{progress}")
+        else:
+            lines.append("   (هنوز KPI ثبت نشده)")
+
+        budget = d["budget"]
+        lines.append(f"\n💰 *بودجه* ({len(budget)} ردیف)")
+        if budget:
+            for cur_code, tot in d["budget_totals"].items():
+                lines.append(f"   • {cur_code}: برنامه {tot['planned']:,.0f} | "
+                             f"هزینه‌شده {tot['spent']:,.0f} | درآمد {tot['income']:,.0f}")
+            for b in budget[:6]:
+                lines.append(f"     - {b['label']}: {float(b['amount'] or 0):,.0f} {b['currency']}")
+        else:
+            lines.append("   (بودجه‌ای ثبت نشده)")
+
+        people = d["people"]
+        lines.append(f"\n👥 *افراد* ({len(people)})")
+        if people:
+            for person in people:
+                tag = "داخلی" if person["is_internal"] else "خارجی"
+                extra = f" | {person['responsibility']}" if person["responsibility"] else ""
+                lines.append(f"   • {person['name']} — {person['role'] or '—'} ({tag}){extra}")
+        else:
+            lines.append("   (فردی ثبت نشده)")
+
+        tasks = d["open_tasks"]
+        lines.append(f"\n📋 *Taskهای باز* ({len(tasks)})")
+        for t in tasks[:6]:
+            lines.append(f"   • {t['title']} ({t['priority']}/{t['status']})")
+        if len(tasks) > 6:
+            lines.append(f"   … و {len(tasks)-6} مورد دیگر")
+
+        if d["decisions"]:
+            lines.append("\n🧭 *آخرین تصمیم‌ها*")
+            for dec in d["decisions"]:
+                lines.append(f"   • {dec['problem']} → {dec['decision'] or 'ثبت شده'}")
+
+        if d["memories"]:
+            lines.append("\n🧠 *حافظه پروژه*")
+            for m in d["memories"][:6]:
+                lines.append(f"   • {m['content']}")
+
+        if d["pending_actions"]:
+            lines.append(f"\n⏳ *در انتظار تأیید* ({len(d['pending_actions'])})")
+            for a in d["pending_actions"]:
+                lines.append(f"   {risk_mod.EMOJI.get(a['risk'], '🟡')} {a['title']}")
+
+        lines.append("\n_برای افزودن KPI/بودجه/فرد فقط بگو؛ موارد پرخطر با دکمه تأیید می‌شوند._")
         return "\n".join(lines)
 
     def _action_list_tasks(self, project) -> str:
@@ -266,7 +449,12 @@ class MasterAgent:
             "• ثبت خودکار Task از حرفات (مثلاً: «برای گیاهکده ۳ مقاله این هفته آماده کن»)\n"
             "• دیدن Taskها: «کارها» یا «تسک‌های امداد سرویس قم»\n"
             "• وضعیت پروژه: «وضعیت گیاهکده رو بگو»\n"
-            "• آخرین تصمیم‌ها: «آخرین تصمیم درباره CropExport چی بود؟»\n\n"
+            "• آخرین تصمیم‌ها: «آخرین تصمیم درباره CropExport چی بود؟»\n"
+            "• پرونده کامل پروژه: «پرونده گیاهکده» یا /dossier giahkade\n"
+            "• صف تأیید: /approvals — اقدامات 🟡/🔴 با دکمه [✅ تأیید] [❌ لغو] در همین چت\n"
+            "• اتصال‌ها: /connections — وردپرس، کانال تلگرام، ایمیل، گوگل…\n\n"
+            "🔐 سیستم تأیید سه‌سطحی فعال است: 🟢 مستقیم اجرا می‌شود، "
+            "🟡 یک تأیید و 🔴 دو تأیید از تو می‌گیرد.\n\n"
             "پروژه‌های فعلی: Net Nova، گیاهکده، E-Ferdowsi، امداد سرویس قم، CropExport، آبادگران، Sir-Siah.\n\n"
             "فقط کافیه طبیعی حرف بزنی؛ Intent رو خودم تشخیص می‌دم."
         )

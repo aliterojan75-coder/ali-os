@@ -3,3 +3,12 @@ __pycache__/
 .env
 data/
 *.db
+.venv/
+venv/
+.pytest_cache/
+
+# build scratch (UI assembly)
+.build/
+node_modules/
+package.json
+package-lock.json

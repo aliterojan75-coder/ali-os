@@ -112,6 +112,72 @@ USER_MEMORIES = [
 ]
 
 
+# ─── Starter project dossier data (§2) ──────────────────────────────────────
+# Only KPI *definitions* (targets) are seeded — real current values arrive in
+# Phase 3 from Search Console / GA4. Seeding is idempotent by (project, name).
+PROJECT_KPIS = {
+    "giahkade": [
+        {"name": "مقالات منتشرشده", "target_value": 12, "unit": "مقاله", "period": "monthly"},
+        {"name": "ترافیک ارگانیک", "target_value": 10000, "unit": "بازدید", "period": "monthly"},
+        {"name": "نرخ تبدیل B2B", "target_value": 3, "unit": "٪", "period": "monthly"},
+    ],
+    "esqom": [
+        {"name": "LCP", "target_value": 2500, "unit": "ms", "period": "weekly", "direction": "down"},
+        {"name": "INP", "target_value": 200, "unit": "ms", "period": "weekly", "direction": "down"},
+        {"name": "لیدهای ورودی", "target_value": 30, "unit": "لید", "period": "monthly"},
+        {"name": "CTR ارگانیک", "target_value": 4, "unit": "٪", "period": "monthly"},
+    ],
+    "e-ferdowsi": [
+        {"name": "فروش ماهانه", "target_value": 100_000_000, "unit": "تومان", "period": "monthly"},
+        {"name": "نرخ تبدیل فروشگاه", "target_value": 2, "unit": "٪", "period": "monthly"},
+    ],
+    "netnova": [
+        {"name": "مشتریان فعال", "target_value": 10, "unit": "مشتری", "period": "monthly"},
+        {"name": "درآمد ماهانه", "target_value": 200_000_000, "unit": "تومان", "period": "monthly"},
+    ],
+}
+
+PROJECT_PEOPLE = {
+    "netnova": [
+        {"name": "علی", "role": "مالک / تصمیم‌گیرنده نهایی",
+         "responsibility": "استراتژی، تأیید اقدامات پرخطر", "is_internal": True},
+        {"name": "Ali OS", "role": "Chief of Staff (AI)",
+         "responsibility": "تحلیل، اجرا، پیگیری، گزارش", "is_internal": True},
+    ],
+}
+
+
+def _seed_dossier() -> None:
+    for slug, kpis in PROJECT_KPIS.items():
+        project = repo.get_project(slug)
+        if not project:
+            continue
+        for k in kpis:
+            exists = db.query_one(
+                "SELECT id FROM project_kpis WHERE project_id=? AND name=?",
+                (project["id"], k["name"]),
+            )
+            if exists:
+                continue
+            repo.add_kpi(
+                project_id=project["id"], name=k["name"],
+                target_value=k.get("target_value"), unit=k.get("unit"),
+                period=k.get("period", "monthly"), direction=k.get("direction", "up"),
+            )
+    for slug, people in PROJECT_PEOPLE.items():
+        project = repo.get_project(slug)
+        if not project:
+            continue
+        for person in people:
+            exists = db.query_one(
+                "SELECT id FROM project_people WHERE project_id=? AND name=?",
+                (project["id"], person["name"]),
+            )
+            if exists:
+                continue
+            repo.add_person(project_id=project["id"], **person)
+
+
 def seed_all() -> None:
     db.init_db()
     for p in PROJECTS:
@@ -139,6 +205,7 @@ def seed_all() -> None:
             memory_type=mtype, scope=scope, content=content,
             confidence=conf, source=source,
         )
+    _seed_dossier()
     log.info("seed.complete", extra={"extra_fields": {"projects": len(PROJECTS), "memories": len(USER_MEMORIES)}})
 
 

@@ -10,15 +10,21 @@ from __future__ import annotations
 
 from flask import Flask, jsonify, request
 
-from app import seed
+from app import approvals, seed
 from app.config import config
 from app.logging_config import get_logger, log_event
 from app.master import MasterAgent
 from app.master.agent import IncomingMessage
 from app.miniapp.api import api as api_bp
 from app.miniapp.routes import spa as spa_bp
-from app.telegram import parse_update, send_message, set_webhook
-from app.tools.set_menu import set_menu_button
+from app.telegram import (
+    answer_callback_query,
+    parse_callback_query,
+    parse_update,
+    send_message,
+    set_webhook,
+)
+from app.tools.set_menu import set_bot_commands, set_menu_button
 
 log = get_logger("webhook")
 
@@ -26,7 +32,11 @@ master = MasterAgent()
 
 
 def create_app() -> Flask:
-    app = Flask(__name__)
+    # static_folder=None disables Flask's built-in /static route, which would
+    # otherwise shadow the Mini App's own asset route (it points at
+    # app/static, a directory this project does not use). The dashboard serves
+    # its assets from app/miniapp/static via the spa blueprint instead.
+    app = Flask(__name__, static_folder=None)
 
     # Initialise DB + seed on startup (idempotent).
     seed.seed_all()
@@ -49,6 +59,13 @@ def create_app() -> Flask:
         except Exception as exc:  # noqa: BLE001
             log.warning("telegram.set_menu_failed", extra={"extra_fields": {"error": str(exc)}})
 
+        # Slash commands (/approvals, /dossier …). Best-effort; never block boot.
+        try:
+            set_bot_commands()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("telegram.set_commands_failed",
+                        extra={"extra_fields": {"error": str(exc)}})
+
     @app.get("/health")
     def health():
         return jsonify({
@@ -67,6 +84,30 @@ def create_app() -> Flask:
             return jsonify({"ok": False, "error": "unauthorized"}), 401
 
         update = request.get_json(silent=True) or {}
+
+        # ── Inline button press on an approval card (§19) ──────────────────
+        cb = parse_callback_query(update)
+        if cb:
+            log_event(
+                log, "webhook.callback",
+                user_id=cb.get("user_id"),
+                payload={"data": cb.get("data"), "chat_id": cb.get("chat_id")},
+            )
+            try:
+                if approvals.is_approval_callback(cb.get("data", "")):
+                    approvals.handle_callback(cb)
+                elif cb.get("callback_query_id"):
+                    answer_callback_query(cb["callback_query_id"], "دکمه ناشناخته است.")
+            except Exception as exc:  # noqa: BLE001 — never 500 back to Telegram
+                log.exception("webhook.callback_error",
+                              extra={"extra_fields": {"error": str(exc)}})
+                if cb.get("callback_query_id"):
+                    try:
+                        answer_callback_query(cb["callback_query_id"], "خطای داخلی رخ داد.")
+                    except Exception:  # noqa: BLE001
+                        pass
+            return jsonify({"ok": True})
+
         parsed = parse_update(update)
         if not parsed or not parsed.get("user_id") or not parsed.get("text"):
             return jsonify({"ok": True, "ignored": True})
@@ -85,6 +126,9 @@ def create_app() -> Flask:
                 username=parsed.get("username"),
                 first_name=parsed.get("first_name"),
             ))
+            if answer is None:
+                # The handler already replied itself (e.g. an approval card).
+                return jsonify({"ok": True})
         except Exception as exc:  # noqa: BLE001 — last-resort guard
             log.exception("webhook.handler_error", extra={"extra_fields": {"error": str(exc)}})
             answer = "⚠️ خطای داخلی رخ داد."
