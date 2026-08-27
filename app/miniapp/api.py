@@ -1062,6 +1062,142 @@ def content_cannibalization_api():
     return jsonify({"ok": True, "results": results})
 
 
+# ── Google Integrations — GSC & GA4 (§4, §5) ─────────────────────────────────
+
+@api.get("/google/overview")
+@api.get("/projects/<slug>/google")
+def google_overview_api(slug: str | None = None):
+    """Fetch GSC + GA4 data for a project (or global if no slug)."""
+    from app.integrations import store
+    from app.integrations.google import get_project_google_data
+
+    project_id = None
+    if slug:
+        p = repo.get_project(slug)
+        if not p:
+            return jsonify({"ok": False, "error": "project not found"}), 404
+        project_id = p["id"]
+    else:
+        slug_q = request.args.get("project")
+        if slug_q:
+            p = repo.get_project(slug_q)
+            project_id = p["id"] if p else None
+
+    # Find credentials
+    gsc_creds = None
+    gsc_prop = None
+    ga4_creds = None
+    ga4_prop = None
+
+    for pid in ([project_id] if project_id else []) + [None]:
+        try:
+            if not gsc_creds:
+                row = store.find("google_search_console", pid)
+                if row:
+                    gsc_creds = store.credentials("google_search_console", pid)
+                    gsc_prop = gsc_creds.get("property_url")
+        except Exception:
+            pass
+        try:
+            if not ga4_creds:
+                row = store.find("google_analytics", pid)
+                if row:
+                    ga4_creds = store.credentials("google_analytics", pid)
+                    ga4_prop = ga4_creds.get("property_id")
+        except Exception:
+            pass
+
+    if not (gsc_creds or ga4_creds):
+        return jsonify({"ok": False, "error": "Google integrations not configured — از تب اتصال‌ها وصل کن", "needs_setup": True}), 404
+
+    data = get_project_google_data(
+        gsc_creds=gsc_creds,
+        gsc_property=gsc_prop,
+        ga4_creds=ga4_creds,
+        ga4_property=ga4_prop,
+    )
+    return jsonify({"ok": True, "google": data, "project_id": project_id})
+
+
+@api.get("/google/gsc/queries")
+def gsc_queries_api():
+    from app.integrations import store
+    from app.integrations.google import gsc_top_queries, gsc_query
+
+    project_slug = request.args.get("project")
+    project_id = None
+    if project_slug:
+        p = repo.get_project(project_slug)
+        project_id = p["id"] if p else None
+
+    # Find GSC creds
+    creds = None
+    prop = None
+    for pid in ([project_id] if project_id else []) + [None]:
+        try:
+            row = store.find("google_search_console", pid)
+            if row:
+                creds = store.credentials("google_search_console", pid)
+                prop = creds.get("property_url")
+                break
+        except Exception:
+            pass
+
+    if not creds or not prop:
+        return jsonify({"ok": False, "error": "GSC not configured"}), 404
+
+    dim = request.args.get("dimension", "query")
+    limit = min(int(request.args.get("limit", 20)), 100)
+
+    try:
+        if dim == "page":
+            from app.integrations.google import gsc_top_pages
+            rows = gsc_top_pages(creds, prop, limit=limit)
+        else:
+            rows = gsc_top_queries(creds, prop, limit=limit)
+        return jsonify({"ok": True, "rows": rows, "property": prop})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@api.get("/google/ga4/report")
+def ga4_report_api():
+    from app.integrations import store
+    from app.integrations.google import ga4_run_report
+
+    project_slug = request.args.get("project")
+    project_id = None
+    if project_slug:
+        p = repo.get_project(project_slug)
+        project_id = p["id"] if p else None
+
+    creds = None
+    prop = None
+    for pid in ([project_id] if project_id else []) + [None]:
+        try:
+            row = store.find("google_analytics", pid)
+            if row:
+                creds = store.credentials("google_analytics", pid)
+                prop = creds.get("property_id")
+                break
+        except Exception:
+            pass
+
+    if not creds or not prop:
+        return jsonify({"ok": False, "error": "GA4 not configured"}), 404
+
+    metrics = request.args.get("metrics")
+    dimensions = request.args.get("dimensions")
+    metrics_list = metrics.split(",") if metrics else None
+    dims_list = dimensions.split(",") if dimensions else None
+
+    try:
+        data = ga4_run_report(creds, prop, metrics=metrics_list, dimensions=dims_list, limit=20)
+        return jsonify({"ok": True, "report": data, "property": prop})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
 @api.get("/health")
 def health():
     return jsonify({"ok": True, "model": config.LLM_MODEL})

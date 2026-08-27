@@ -186,6 +186,47 @@ def generate_morning_report(
     except Exception:
         crm_stats = {}
 
+    # Google data (GSC + GA4) if integrations exist
+    google_data = {}
+    try:
+        from app.integrations import store
+        from app.integrations.google import get_project_google_data
+
+        # Try to find GSC and GA4 integrations for this project (or global)
+        gsc_creds = None
+        gsc_prop = None
+        ga4_creds = None
+        ga4_prop = None
+
+        # Look for project-specific first, then global
+        for pid in ([project_id] if project_id else []) + [None]:
+            try:
+                if not gsc_creds:
+                    row = store.find("google_search_console", pid)
+                    if row:
+                        gsc_creds = store.credentials("google_search_console", pid)
+                        gsc_prop = gsc_creds.get("property_url")
+            except Exception:
+                pass
+            try:
+                if not ga4_creds:
+                    row = store.find("google_analytics", pid)
+                    if row:
+                        ga4_creds = store.credentials("google_analytics", pid)
+                        ga4_prop = ga4_creds.get("property_id")
+            except Exception:
+                pass
+
+        if gsc_creds or ga4_creds:
+            google_data = get_project_google_data(
+                gsc_creds=gsc_creds,
+                gsc_property=gsc_prop,
+                ga4_creds=ga4_creds,
+                ga4_property=ga4_prop,
+            )
+    except Exception:
+        google_data = {}
+
     # Counts
     counts = {
         "open_tasks": len(all_open),
@@ -223,6 +264,7 @@ def generate_morning_report(
         "velocity": vel,
         "approvals_summary": appr_summary,
         "crm_stats": crm_stats,
+        "google": google_data,
     }
 
 
@@ -286,6 +328,25 @@ def format_morning_report_telegram(report: dict) -> str:
         for f in report["crm_followups"][:5]:
             lines.append(f"  • {f['contact_name']} — {f['summary']}")
         lines.append("")
+
+    # Google data
+    google = report.get("google", {})
+    if google:
+        gsc = google.get("gsc")
+        if gsc and gsc.get("totals"):
+            tot = gsc["totals"]
+            lines.append(f"🔍 *Search Console (۲۸ روز):* {fa_num(int(tot.get('clicks',0)))} کلیک، {fa_num(int(tot.get('impressions',0)))} نمایش، CTR {tot.get('ctr',0):.1%}، میانگین جایگاه {tot.get('position',0):.1f}")
+            if gsc.get("top_queries"):
+                lines.append("  کوئری‌های برتر:")
+                for q in gsc["top_queries"][:3]:
+                    keys = q.get("keys", [])
+                    lines.append(f"    • {keys[0] if keys else '—'} — {fa_num(int(q.get('clicks',0)))} کلیک")
+            lines.append("")
+        ga4 = google.get("ga4")
+        if ga4 and ga4.get("totals"):
+            tot = ga4["totals"]
+            lines.append(f"📈 *GA4 (۲۸ روز):* {fa_num(tot.get('sessions','—'))} سشن، {fa_num(tot.get('totalUsers','—'))} کاربر")
+            lines.append("")
 
     # Velocity
     vel = report.get("velocity", {})

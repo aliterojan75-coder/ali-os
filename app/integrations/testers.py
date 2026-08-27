@@ -144,11 +144,51 @@ def _google_oauth(creds: dict, scope_hint: str) -> tuple[bool, str, dict]:
 
 
 def _gsc(creds: dict) -> tuple[bool, str, dict]:
-    return _google_oauth(creds, "Search Console")
+    # First check token validity
+    ok, msg, details = _google_oauth(creds, "Search Console")
+    if not ok:
+        return ok, msg, details
+
+    # Try to list sites to give more context
+    try:
+        from app.integrations.google import gsc_list_sites
+        sites = gsc_list_sites(creds)
+        property_url = creds.get("property_url") or ""
+        if property_url:
+            found = any(s.get("siteUrl") == property_url for s in sites)
+            if found:
+                return True, f"متصل شد ✓ Property یافت شد: {property_url} ({len(sites)} کل)", {"sites": len(sites), "property_found": True}
+            else:
+                return True, f"توکن معتبر است ✓ ولی Property {property_url} در لیست {len(sites)} سایت یافت نشد — آدرس را بررسی کن", {"sites": len(sites), "property_found": False}
+        else:
+            return True, f"توکن معتبر است ✓ {len(sites)} Property در Search Console", {"sites": len(sites)}
+    except Exception as exc:
+        # Token valid but listing failed — still ok, maybe insufficient scope
+        return True, f"توکن معتبر است ✓ ولی لیست سایت‌ها خطا داد: {type(exc).__name__} — {exc}", {}
 
 
 def _ga4(creds: dict) -> tuple[bool, str, dict]:
-    return _google_oauth(creds, "GA4")
+    ok, msg, details = _google_oauth(creds, "GA4")
+    if not ok:
+        return ok, msg, details
+
+    # Try realtime report as a cheap check if property_id is given
+    property_id = creds.get("property_id") or ""
+    if property_id:
+        try:
+            from app.integrations.google import ga4_realtime_report
+            rt = ga4_realtime_report(creds, property_id)
+            active = 0
+            try:
+                # Parse activeUsers
+                active = rt.get("totals", [{}])[0].get("metricValues", [{}])[0].get("value", "0")
+            except Exception:
+                pass
+            return True, f"متصل شد ✓ GA4 Property {property_id} — کاربران فعال: {active}", {"property_id": property_id}
+        except Exception as exc:
+            return True, f"توکن معتبر است ✓ ولی GA4 Property {property_id} خطا داد: {exc}", {"property_id": property_id}
+    else:
+        return True, "توکن معتبر است ✓ ولی Property ID وارد نشده", {}
 
 
 TESTERS = {

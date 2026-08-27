@@ -66,7 +66,25 @@ Telegram → Webhook → Flask/Gunicorn → Master Agent → LLM + Memory + Task
   - تولید زنده (بدون نیاز به Cron) + جدول `notifications` برای ذخیره خوانده/نخوانده
   - دستور `/notify` + `GET /api/notifications` + بج روی تب اعلان + کارت پیش‌نمایش در خلاصه
   - `POST /api/notifications/read-all` برای علامت‌گذاری خوانده‌شده
-- ⬜ Content Agent (قدم بعدی)
+- ✅ **Content Agent (§9)** — تولید مقاله با سئو و جلوگیری از Cannibalization
+  - جدول `content_drafts` + `seo_audits` + بررسی مشابهت Jaccard روی drafts و WordPress `content_index`
+  - تولید با LLM: عنوان فارسی، slug انگلیسی، outline، محتوای ۲۰۰۰ کلمه‌ای، چکیده، FAQ، image_prompt، CTA، meta_title/description، focus_keyword
+  - اتصال به تأیید: تولید 🟡، پیش‌نویس وردپرس 🟡، انتشار نهایی 🔴
+  - دستور `/content <موضوع>` + API `/api/content/*` + تب محتوا در داشبورد (۹ تب)
+- ✅ **SEO Agent (§8)** — تحلیل on-page
+  - امتیازدهی: طول محتوا، متا، کلمه کلیدی، تراکم، cannibalization، FAQ/CTA
+  - دستور `/seo <پروژه>` + `POST /api/content/drafts/<uid>/seo-audit`
+- ✅ **Google Search Console + GA4 (§4, §5)** — داده واقعی
+  - `app/integrations/google.py`: OAuth refresh → access token، `searchanalytics.query` و GA4 `runReport`/`runRealtimeReport`
+  - `app/tools/google_oauth.py`: ابزار یک‌بار برای گرفتن refresh token (مرورگر + localhost callback)
+  - تست اتصال بهبودیافته: لیست سایت‌ها و بررسی Property
+  - `GET /api/projects/<slug>/google` و `/api/google/overview` + `/gsc/queries` + `/ga4/report`
+  - کارت گوگل در خلاصه داشبورد + بخش گوگل در پرونده پروژه + گزارش صبحگاهی شامل GSC/GA4
+  - دستور `/seo` شامل داده واقعی GSC/GA4
+- ✅ **Automation (§16)** — گزارش صبحگاهی خودکار
+  - `app/automation/cron.py` + endpoint امن `/internal/cron?secret=...&job=daily|morning|notifications`
+  - برای `cron-job.org` یا GitHub Actions
+- ⬜ Business Analyst, Sales Agent (قدم بعدی فاز ۳)
 
 ## دستورات تلگرام
 | دستور | کار |
@@ -79,13 +97,15 @@ Telegram → Webhook → Flask/Gunicorn → Master Agent → LLM + Memory + Task
 | `/morning` | گزارش صبحگاهی با تقویم شمسی و اولویت‌بندی هوشمند |
 | `/crm` | مخاطبان و معاملات CRM + پیگیری‌ها |
 | `/notify` | اعلان‌ها — تسک معوق، تأیید در حال انقضا، CRM |
+| `/content <موضوع>` | تولید مقاله با سئو و Cannibalization چک |
+| `/seo <پروژه>` | وضعیت سئو — Search Console + GA4 + تحلیل محتوا |
 
 بقیه‌ی تعامل زبان طبیعی است؛ Intent Router خودش تشخیص می‌دهد.
 
 ## تست
 
 ```bash
-python -m pytest tests -q      # ۱۱۱ تست پایتون — بدون شبکه، بدون تلگرام واقعی
+python -m pytest tests -q      # ۱۲۴ تست پایتون — بدون شبکه، بدون تلگرام واقعی
 
 # تست رابط کاربری (نیازمند سرور در حال اجرا + npm install jsdom)
 node tests/ui/dashboard.test.mjs   # ۳۰ بررسی رندر واقعی نمودارها

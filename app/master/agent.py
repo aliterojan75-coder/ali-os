@@ -89,6 +89,10 @@ class MasterAgent:
             parts = text.strip().split(maxsplit=1)
             proj = parts[1].strip() if len(parts) > 1 else None
             return {"intent": "content_overview", "confidence": 0.99, "project_slug": proj}
+        if low in ("/seo", "سئو", "وضعیت سئو", "seo report"):
+            parts = text.strip().split(maxsplit=1)
+            proj = parts[1].strip() if len(parts) > 1 else None
+            return {"intent": "seo_overview", "confidence": 0.99, "project_slug": proj}
         if low.startswith("/content") or low.startswith("مقاله بنویس") or low.startswith("محتوا بنویس"):
             # /content <topic> or natural language
             rest = text.strip().split(maxsplit=1)
@@ -110,6 +114,8 @@ class MasterAgent:
             return {"intent": "generate_content", "confidence": 0.9, "project_slug": None, "topic": text}
         if any(kw in low for kw in ["لیست مقالات", "پیش‌نویس‌ها", "content drafts"]):
             return {"intent": "content_overview", "confidence": 0.85, "project_slug": None}
+        if any(kw in low for kw in ["وضعیت سئو", "seo", "سئو سایت", "کلمات کلیدی", "ترافیک گوگل"]):
+            return {"intent": "seo_overview", "confidence": 0.85, "project_slug": None}
         if any(kw in low for kw in ["اعلان", "نوتیف", "هشدار"]):
             # Could be notification request
             if len(low) < 30:
@@ -165,6 +171,8 @@ class MasterAgent:
         if intent == "generate_content":
             topic = route.get("topic") or route.get("task_title") or msg.text
             return self._action_generate_content(project, user_id, msg.chat_id, topic)
+        if intent == "seo_overview":
+            return self._action_seo_overview(project, user_id)
         if intent == "help":
             return self._help_text()
 
@@ -595,6 +603,98 @@ class MasterAgent:
         else:
             return f"{res.message}\nموضوع: {clean_topic} — کارت تأیید در چت ارسال شد. بعد از تأیید، مقاله تولید می‌شود."
 
+    # ── SEO Agent (§8) ─────────────────────────────────────────────────────
+    def _action_seo_overview(self, project, user_id: int) -> str:
+        from app.integrations import store
+        from app.integrations.google import get_project_google_data
+
+        pid = project["id"] if project else None
+        proj_label = project["name"] if project else "همه پروژه‌ها"
+
+        # Find creds
+        gsc_creds = None
+        gsc_prop = None
+        ga4_creds = None
+        ga4_prop = None
+        for _pid in ([pid] if pid else []) + [None]:
+            try:
+                if not gsc_creds:
+                    row = store.find("google_search_console", _pid)
+                    if row:
+                        gsc_creds = store.credentials("google_search_console", _pid)
+                        gsc_prop = gsc_creds.get("property_url")
+            except Exception:
+                pass
+            try:
+                if not ga4_creds:
+                    row = store.find("google_analytics", _pid)
+                    if row:
+                        ga4_creds = store.credentials("google_analytics", _pid)
+                        ga4_prop = ga4_creds.get("property_id")
+            except Exception:
+                pass
+
+        if not (gsc_creds or ga4_creds):
+            return (
+                f"🔍 *وضعیت سئو — {proj_label}*\n\n"
+                "⚠️ اتصال گوگل تنظیم نشده. برای داده واقعی:\n"
+                "1. داشبورد → تب اتصال‌ها → Google Search Console و GA4 را وصل کن\n"
+                "2. با `python -m app.tools.google_oauth` یک Refresh Token بگیر\n"
+                "3. بعد از اتصال، دوباره /seo بزن — کلیک، ایمپرشن، CTR و جایگاه را می‌بینی.\n\n"
+                "در حال حاضر فقط تحلیل داخلی (Cannibalization، طول محتوا، متا) در دسترس است.\n"
+                "برای تحلیل پیش‌نویس: /content → انتخاب پیش‌نویس → بررسی سئو"
+            )
+
+        data = get_project_google_data(
+            gsc_creds=gsc_creds,
+            gsc_property=gsc_prop,
+            ga4_creds=ga4_creds,
+            ga4_property=ga4_prop,
+        )
+
+        lines = [f"🔍 *وضعیت سئو — {proj_label}*", ""]
+
+        if data.get("gsc"):
+            gsc = data["gsc"]
+            tot = gsc.get("totals", {})
+            lines.append(f"📊 *Search Console (۲۸ روز):*")
+            lines.append(f"  • کلیک: {tot.get('clicks',0):,.0f} | نمایش: {tot.get('impressions',0):,.0f} | CTR: {tot.get('ctr',0):.1%} | جایگاه: {tot.get('position',0):.1f}")
+            if gsc.get("top_queries"):
+                lines.append(f"\n🔑 *کوئری‌های برتر:*")
+                for q in gsc["top_queries"][:8]:
+                    keys = q.get("keys", [])
+                    lines.append(f"  • {keys[0] if keys else '—'} — {q.get('clicks',0):,.0f} کلیک، جایگاه {q.get('position',0):.1f}")
+            if gsc.get("top_pages"):
+                lines.append(f"\n📄 *صفحات برتر:*")
+                for p in gsc["top_pages"][:5]:
+                    keys = p.get("keys", [])
+                    lines.append(f"  • {keys[0][:60] if keys else '—'} — {p.get('clicks',0):,.0f} کلیک")
+
+        if data.get("ga4"):
+            ga4 = data["ga4"]
+            tot = ga4.get("totals", {})
+            lines.append(f"\n📈 *GA4 (۲۸ روز):*")
+            lines.append(f"  • سشن: {tot.get('sessions','—')} | کاربر: {tot.get('totalUsers','—')} | بازدید: {tot.get('screenPageViews','—')}")
+
+        if data.get("errors"):
+            lines.append(f"\n⚠️ خطاها: {' • '.join(data['errors'])}")
+
+        # Add SEO tips from content drafts
+        try:
+            from app.content.repository import content_stats, list_drafts
+            c_stats = content_stats(project_id=pid)
+            if c_stats["total"]:
+                lines.append(f"\n📝 *محتوا:* {c_stats['total']} پیش‌نویس، میانگین {c_stats['avg_word_count']} کلمه")
+                drafts = list_drafts(project_id=pid, limit=5)
+                low_seo = [d for d in drafts if d["seo_score"] is not None and d["seo_score"] < 70]
+                if low_seo:
+                    lines.append(f"⚠️ {len(low_seo)} پیش‌نویس امتیاز سئو پایین دارند — نیاز به بهینه‌سازی.")
+        except Exception:
+            pass
+
+        lines.append("\n_برای جزئیات کامل داشبورد را باز کن → خلاصه → کارت گوگل._")
+        return "\n".join(lines)
+
     # ── Chat with full context ─────────────────────────────────────────────
     def _action_chat(self, msg: IncomingMessage, convo_id: int, project) -> str:
         projects = repo.list_projects(active_only=True)
@@ -651,9 +751,11 @@ class MasterAgent:
             "• پرونده کامل پروژه: «پرونده گیاهکده» یا /dossier giahkade\n"
             "• صف تأیید: /approvals — اقدامات 🟡/🔴 با دکمه [✅ تأیید] [❌ لغو] در همین چت\n"
             "• اتصال‌ها: /connections — وردپرس، کانال تلگرام، ایمیل، گوگل…\n"
-            "• گزارش صبحگاهی: /morning — با تقویم شمسی، اولویت‌بندی هوشمند، پیگیری CRM\n"
+            "• گزارش صبحگاهی: /morning — با تقویم شمسی، اولویت‌بندی هوشمند، پیگیری CRM، داده گوگل\n"
             "• مخاطبان و معاملات: /crm — مدیریت CRM پایه\n"
-            "• اعلان‌ها: /notify — تسک‌های معوق، تأییدهای در حال انقضا، پیگیری‌های CRM\n\n"
+            "• اعلان‌ها: /notify — تسک‌های معوق، تأییدهای در حال انقضا، پیگیری‌های CRM\n"
+            "• محتوا: /content <موضوع> — تولید مقاله با سئو و Cannibalization چک\n"
+            "• سئو: /seo <پروژه> — وضعیت Search Console + GA4 + تحلیل محتوا\n\n"
             "🔐 سیستم تأیید سه‌سطحی فعال است: 🟢 مستقیم اجرا می‌شود، "
             "🟡 یک تأیید و 🔴 دو تأیید از تو می‌گیرد.\n\n"
             "پروژه‌های فعلی: Net Nova، گیاهکده، E-Ferdowsi، امداد سرویس قم، CropExport، آبادگران، Sir-Siah.\n\n"

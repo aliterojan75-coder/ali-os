@@ -325,6 +325,16 @@
       <button class="btn sm ghost" style="width:100%;margin-top:8px" onclick="document.querySelector('nav.tabs button[data-v=notifications]').click()">دیدن همه اعلان‌ها</button>
     </div>
 
+    <div class="card" id="googleCard">
+      <h2><span class="ico">🔍</span> داده گوگل (GSC + GA4) <span class="right" id="googleStatus">در حال بررسی…</span></h2>
+      <div id="googleSummary"></div>
+      <div class="list" id="googleTopQueries"></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn sm ghost" style="flex:1" onclick="loadGoogleData()">🔄 بروزرسانی گوگل</button>
+        <button class="btn sm ghost" style="flex:1" onclick="document.querySelector('nav.tabs button[data-v=conn]').click()">🔌 تنظیم اتصال</button>
+      </div>
+    </div>
+
     <div class="card">
       <h2><span class="ico">📊</span> نگاه کلی</h2>
       <div class="stats" id="stats"></div>
@@ -929,6 +939,7 @@ async function loadOverview(){
 
   // Load notification preview
   try{ await loadNotifPreview(); }catch(e){}
+  try{ await loadGoogleData(); }catch(e){}
 
   updateBadges();
 }
@@ -1154,7 +1165,40 @@ async function openProject(slug){
     html+=`<div class="sep"></div><div class="muted-s" style="margin-bottom:6px;font-weight:700">🧭 تصمیم‌ها</div>`;
     html+=d.decisions.map(x=>`<div class="muted-s">• ${esc(x.problem)} → ${esc(x.decision||'ثبت شده')}</div>`).join('');
   }
+
+  // Google data section — fetch async after rendering base dossier
+  html+=`<div class="sep"></div><div id="ps-google"><div class="muted-s" style="font-weight:700">🔍 داده گوگل</div><div class="sk" style="height:60px;margin-top:8px"></div></div>`;
+
   $('#ps-body').innerHTML=html;
+
+  // Load Google data for this project in background
+  (async()=>{
+    try{
+      const gData = await api('/api/projects/'+encodeURIComponent(slug)+'/google');
+      const g = gData.google;
+      let gh = `<div class="muted-s" style="font-weight:700">🔍 داده گوگل</div>`;
+      if(g.gsc && g.gsc.totals){
+        const tot = g.gsc.totals;
+        gh += `<div class="stats" style="margin:10px 0"><div class="stat"><div class="n">${fa(Math.round(tot.clicks||0))}</div><div class="l">کلیک</div></div><div class="stat"><div class="n">${Charts.compact(Math.round(tot.impressions||0))}</div><div class="l">نمایش</div></div><div class="stat"><div class="n">${fa((tot.ctr*100||0).toFixed(1))}٪</div><div class="l">CTR</div></div></div>`;
+        if(g.gsc.top_queries && g.gsc.top_queries.length){
+          gh += `<div class="muted-s" style="margin:8px 0 4px">کوئری‌های برتر:</div><div class="list">`+g.gsc.top_queries.slice(0,5).map(q=>`<div class="item"><div class="t">${esc((q.keys||[])[0]||'—')}</div><div class="meta"><span>${fa(Math.round(q.clicks||0))} کلیک</span></div></div>`).join('')+`</div>`;
+        }
+      } else {
+        gh += `<div class="muted-s">اتصال GSC تنظیم نشده یا داده‌ای نیست.</div>`;
+      }
+      if(g.ga4 && g.ga4.totals){
+        const tot = g.ga4.totals;
+        gh += `<div class="stats" style="margin:10px 0"><div class="stat"><div class="n">${fa(tot.sessions||'—')}</div><div class="l">سشن</div></div><div class="stat"><div class="n">${fa(tot.totalUsers||'—')}</div><div class="l">کاربر</div></div></div>`;
+      }
+      const el = document.getElementById('ps-google');
+      if(el) el.innerHTML = gh;
+    }catch(e){
+      const el = document.getElementById('ps-google');
+      if(el) el.innerHTML = `<div class="muted-s" style="font-weight:700">🔍 داده گوگل</div><div class="muted-s">${esc(e.message)}</div>`;
+    }
+  })();
+
+  return;
 }
 
 /* ---------- approvals ---------- */
@@ -1846,7 +1890,81 @@ async function deleteContentDraft(uid){
   }catch(e){ toast('خطا: '+e.message,'err'); }
 }
 
+
+/* ---------- Google GSC + GA4 (§4, §5) ---------- */
+async function loadGoogleData(projectSlug){
+  const statusEl = $('#googleStatus');
+  const summaryEl = $('#googleSummary');
+  const queriesEl = $('#googleTopQueries');
+  if(statusEl) statusEl.textContent = 'در حال بارگذاری…';
+  if(summaryEl) summaryEl.innerHTML = skeleton(2,'sk-line');
+  if(queriesEl) queriesEl.innerHTML = '';
+  try{
+    let url = '/api/google/overview';
+    if(projectSlug) url = '/api/projects/'+encodeURIComponent(projectSlug)+'/google';
+    const r = await api(url);
+    const g = r.google;
+    if(statusEl) statusEl.textContent = 'متصل ✓';
+    let h = '';
+    if(g.gsc && g.gsc.totals){
+      const tot = g.gsc.totals;
+      h += `<div class="stats" style="margin-bottom:10px">
+        <div class="stat"><div class="n">${fa(Math.round(tot.clicks||0))}</div><div class="l">کلیک GSC</div></div>
+        <div class="stat"><div class="n">${Charts.compact(Math.round(tot.impressions||0))}</div><div class="l">نمایش</div></div>
+        <div class="stat"><div class="n">${fa((tot.ctr*100||0).toFixed(1))}٪</div><div class="l">CTR</div></div>
+        <div class="stat"><div class="n">${fa((tot.position||0).toFixed(1))}</div><div class="l">جایگاه</div></div>
+      </div>`;
+    }
+    if(g.ga4 && g.ga4.totals){
+      const tot = g.ga4.totals;
+      h += `<div class="stats" style="margin-bottom:10px">
+        <div class="stat"><div class="n">${fa(tot.sessions||'—')}</div><div class="l">سشن GA4</div></div>
+        <div class="stat"><div class="n">${fa(tot.totalUsers||'—')}</div><div class="l">کاربر</div></div>
+        <div class="stat"><div class="n">${fa(tot.screenPageViews||'—')}</div><div class="l">بازدید</div></div>
+      </div>`;
+    }
+    if(!h) h = `<div class="muted-s">داده گوگل برای این پروژه هنوز بارگذاری نشده یا اتصال تنظیم نشده.</div>`;
+    if(summaryEl) summaryEl.innerHTML = h;
+
+    // Top queries
+    if(queriesEl){
+      let qh = '';
+      if(g.gsc && g.gsc.top_queries && g.gsc.top_queries.length){
+        qh += `<div class="muted-s" style="font-weight:700;margin:8px 0 6px">🔍 کوئری‌های برتر</div>`;
+        qh += g.gsc.top_queries.slice(0,6).map(q=>{
+          const keys = q.keys || [];
+          return `<div class="item"><div class="t">${esc(keys[0]||'—')}</div><div class="meta"><span>${fa(Math.round(q.clicks||0))} کلیک</span><span>${fa(Math.round(q.impressions||0))} نمایش</span><span>جایگاه ${fa((q.position||0).toFixed(1))}</span></div></div>`;
+        }).join('');
+      }
+      if(g.gsc && g.gsc.top_pages && g.gsc.top_pages.length){
+        qh += `<div class="muted-s" style="font-weight:700;margin:12px 0 6px">📄 صفحات برتر</div>`;
+        qh += g.gsc.top_pages.slice(0,5).map(p=>{
+          const keys = p.keys || [];
+          const page = keys[0]||'';
+          return `<div class="item"><div class="t" style="font-size:12px;direction:ltr;text-align:left">${esc(page.slice(0,80))}</div><div class="meta"><span>${fa(Math.round(p.clicks||0))} کلیک</span></div></div>`;
+        }).join('');
+      }
+      queriesEl.innerHTML = qh;
+    }
+
+    if(g.errors && g.errors.length){
+      if(summaryEl) summaryEl.innerHTML += `<div class="muted-s" style="color:#ff9b9b;margin-top:8px">${esc(g.errors.join(' • '))}</div>`;
+    }
+
+  }catch(e){
+    if(statusEl) statusEl.textContent = 'تنظیم نشده';
+    if(summaryEl){
+      if(e.message && e.message.includes('not configured')){
+        summaryEl.innerHTML = `<div class="empty">🔌 اتصال گوگل تنظیم نشده<br><span class="muted-s">از تب اتصال‌ها → Google Search Console و GA4 را وصل کن.<br>راهنما: <code>python -m app.tools.google_oauth</code></span></div>`;
+      } else {
+        summaryEl.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+      }
+    }
+  }
+}
+
 /* ---------- navigation ---------- */
+
 
 
 
@@ -2006,7 +2124,81 @@ async function deleteContentDraft(uid){
   }catch(e){ toast('خطا: '+e.message,'err'); }
 }
 
+
+/* ---------- Google GSC + GA4 (§4, §5) ---------- */
+async function loadGoogleData(projectSlug){
+  const statusEl = $('#googleStatus');
+  const summaryEl = $('#googleSummary');
+  const queriesEl = $('#googleTopQueries');
+  if(statusEl) statusEl.textContent = 'در حال بارگذاری…';
+  if(summaryEl) summaryEl.innerHTML = skeleton(2,'sk-line');
+  if(queriesEl) queriesEl.innerHTML = '';
+  try{
+    let url = '/api/google/overview';
+    if(projectSlug) url = '/api/projects/'+encodeURIComponent(projectSlug)+'/google';
+    const r = await api(url);
+    const g = r.google;
+    if(statusEl) statusEl.textContent = 'متصل ✓';
+    let h = '';
+    if(g.gsc && g.gsc.totals){
+      const tot = g.gsc.totals;
+      h += `<div class="stats" style="margin-bottom:10px">
+        <div class="stat"><div class="n">${fa(Math.round(tot.clicks||0))}</div><div class="l">کلیک GSC</div></div>
+        <div class="stat"><div class="n">${Charts.compact(Math.round(tot.impressions||0))}</div><div class="l">نمایش</div></div>
+        <div class="stat"><div class="n">${fa((tot.ctr*100||0).toFixed(1))}٪</div><div class="l">CTR</div></div>
+        <div class="stat"><div class="n">${fa((tot.position||0).toFixed(1))}</div><div class="l">جایگاه</div></div>
+      </div>`;
+    }
+    if(g.ga4 && g.ga4.totals){
+      const tot = g.ga4.totals;
+      h += `<div class="stats" style="margin-bottom:10px">
+        <div class="stat"><div class="n">${fa(tot.sessions||'—')}</div><div class="l">سشن GA4</div></div>
+        <div class="stat"><div class="n">${fa(tot.totalUsers||'—')}</div><div class="l">کاربر</div></div>
+        <div class="stat"><div class="n">${fa(tot.screenPageViews||'—')}</div><div class="l">بازدید</div></div>
+      </div>`;
+    }
+    if(!h) h = `<div class="muted-s">داده گوگل برای این پروژه هنوز بارگذاری نشده یا اتصال تنظیم نشده.</div>`;
+    if(summaryEl) summaryEl.innerHTML = h;
+
+    // Top queries
+    if(queriesEl){
+      let qh = '';
+      if(g.gsc && g.gsc.top_queries && g.gsc.top_queries.length){
+        qh += `<div class="muted-s" style="font-weight:700;margin:8px 0 6px">🔍 کوئری‌های برتر</div>`;
+        qh += g.gsc.top_queries.slice(0,6).map(q=>{
+          const keys = q.keys || [];
+          return `<div class="item"><div class="t">${esc(keys[0]||'—')}</div><div class="meta"><span>${fa(Math.round(q.clicks||0))} کلیک</span><span>${fa(Math.round(q.impressions||0))} نمایش</span><span>جایگاه ${fa((q.position||0).toFixed(1))}</span></div></div>`;
+        }).join('');
+      }
+      if(g.gsc && g.gsc.top_pages && g.gsc.top_pages.length){
+        qh += `<div class="muted-s" style="font-weight:700;margin:12px 0 6px">📄 صفحات برتر</div>`;
+        qh += g.gsc.top_pages.slice(0,5).map(p=>{
+          const keys = p.keys || [];
+          const page = keys[0]||'';
+          return `<div class="item"><div class="t" style="font-size:12px;direction:ltr;text-align:left">${esc(page.slice(0,80))}</div><div class="meta"><span>${fa(Math.round(p.clicks||0))} کلیک</span></div></div>`;
+        }).join('');
+      }
+      queriesEl.innerHTML = qh;
+    }
+
+    if(g.errors && g.errors.length){
+      if(summaryEl) summaryEl.innerHTML += `<div class="muted-s" style="color:#ff9b9b;margin-top:8px">${esc(g.errors.join(' • '))}</div>`;
+    }
+
+  }catch(e){
+    if(statusEl) statusEl.textContent = 'تنظیم نشده';
+    if(summaryEl){
+      if(e.message && e.message.includes('not configured')){
+        summaryEl.innerHTML = `<div class="empty">🔌 اتصال گوگل تنظیم نشده<br><span class="muted-s">از تب اتصال‌ها → Google Search Console و GA4 را وصل کن.<br>راهنما: <code>python -m app.tools.google_oauth</code></span></div>`;
+      } else {
+        summaryEl.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+      }
+    }
+  }
+}
+
 /* ---------- navigation ---------- */
+
 
 const LOADERS={overview:loadOverview,tasks:()=>loadTasks(),projects:loadProjectView,
                crm:()=>loadCrm(),content:()=>loadContent(),approvals:loadApprovals,notifications:()=>loadNotifications(),

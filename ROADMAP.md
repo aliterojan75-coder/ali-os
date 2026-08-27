@@ -116,7 +116,40 @@
 
 **تست:** ۱۱۱ تست سبز (۶۶ قبلی + ۲۲ جدید CRM/PM/Notifications/Jalali + ۲۳ Turso).
 
-> قدم بعدی فاز ۲: Content Agent + اتوماسیون گزارش صبحگاهی با cron-job.org (endpoint امن `/internal/cron`).
+### ✅ قدم ۵ فاز ۲-۳ — Content Agent + SEO Agent + Automation (انجام شد — ۲۰۲۶-۰۸-۲۷)
+
+**Content Agent (§9):**
+- جدول `content_drafts` (uid, topic, title, slug_en, outline, content, FAQ, image_prompt, CTA, meta, word_count, status, cannibalization, seo_score, wordpress_post_id/url)
+- `seo_audits` برای ذخیره نتایج بررسی سئو
+- `app/content/repository.py` — CRUD + stats
+- `app/agents/content_agent.py` — `check_cannibalization()` با Jaccard روی drafts + WordPress `content_index()`، `generate_article()` با LLM ساختاریافته (عنوان فارسی، slug EN، outline، محتوای ۲۰۰۰ کلمه، excerpt، FAQ، image_prompt، CTA، meta_title/description، focus_keyword)
+- اتصال به تأیید: `content.draft_create/update` 🟢، `content.generate/publish_draft/delete_draft` 🟡، `content.publish` 🔴
+- API: `/api/content/drafts`, `/generate`, `/drafts/<uid>`, `/publish`, `/seo-audit`, `/stats`, `/cannibalization`
+- دستور `/content <موضوع>` + تب محتوا (۹ تب) با شیت تولید و جزئیات + SEO audit + انتشار وردپرس
+
+**SEO Agent (§8):**
+- `app/agents/seo_agent.py` — `audit_content()` امتیازدهی (طول محتوا، متا title/desc، کلمه کلیدی در عنوان/متا، تراکم، cannibalization risk، FAQ/CTA/image_prompt)
+- ذخیره در `seo_audits` + به‌روزرسانی `content_drafts.seo_score`
+- دستور `/seo <پروژه>` — گزارش GSC/GA4 + تحلیل محتوا
+
+**Google Search Console + GA4 (§4, §5) — داده واقعی:**
+- `app/integrations/google.py` — OAuth refresh → access token، `gsc_query()` با تاریخ پیش‌فرض ۲۸ روز منتهی به ۳ روز قبل (تأخیر GSC)، `gsc_list_sites()`, `gsc_top_queries/pages()`, `ga4_run_report()`, `ga4_realtime_report()`, `get_project_google_data()`
+- `app/tools/google_oauth.py` — ابزار CLI یک‌بار برای گرفتن refresh token (مرورگر + localhost callback روی پورت دلخواه)
+- بهبود `app/integrations/testers.py` — برای GSC لیست سایت‌ها و بررسی Property، برای GA4 realtime check
+- API: `GET /api/google/overview`, `GET /api/projects/<slug>/google`, `GET /api/google/gsc/queries`, `GET /api/google/ga4/report`
+- داشبورد: کارت گوگل در خلاصه (کلیک، نمایش، CTR، جایگاه + سشن/کاربر GA4) + بخش گوگل در پرونده پروژه + گزارش صبحگاهی شامل GSC/GA4
+- Master Agent: `_action_seo_overview()` با داده واقعی + هشدار اگر اتصال تنظیم نشده
+
+**Automation (§16):**
+- `app/automation/cron.py` — `run_morning_job()`, `run_notifications_job()`, `run_daily_jobs()` + تشخیص chat_id از آخرین conversation
+- Endpoint امن `GET/POST /internal/cron?secret=CRON_SECRET&job=daily|morning|notifications` در `app/webhook.py`
+- `CRON_SECRET` در `config.py` (پیش‌فرض = `WEBHOOK_SECRET`)
+- مستند برای `cron-job.org`: هر روز صبح `https://ali-os.onrender.com/internal/cron?secret=...&job=daily`
+
+**تست:** ۱۲۴ تست سبز (۱۱۱ قبلی + ۶ content + ۷ google).
+
+> قدم بعدی فاز ۳: OAuth یک‌بار + Search Console + GA4 تکمیل شد — بعدی Business Analyst + Sales Agent + Content Agent کامل با اتصال به GSC برای پیشنهاد موضوع.
+
 
 
 
