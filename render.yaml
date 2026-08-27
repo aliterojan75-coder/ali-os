@@ -29,9 +29,9 @@ services:
       - key: LOG_LEVEL
         value: INFO
       - key: LLM_BASE_URL
-        value: https://inference.dahl.global/v1
+        value: https://api.groq.com/openai/v1
       - key: LLM_MODEL
-        value: MiniMaxAI/MiniMax-M2.7
+        value: llama-3.3-70b-versatile
       # PUBLIC_URL is optional on Render: RENDER_EXTERNAL_URL is used automatically.
       - key: TELEGRAM_BOT_TOKEN
         sync: false
