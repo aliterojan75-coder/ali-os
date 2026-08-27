@@ -468,12 +468,23 @@
         <button data-f="published">منتشرشده</button>
       </div>
       <div class="list" id="contentList"></div>
-      <div style="display:flex;gap:8px;margin-top:12px">
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
         <button class="btn sm" style="flex:1" onclick="openContentGenerateSheet()">✨ تولید مقاله جدید</button>
         <button class="btn sm ghost" style="flex:1" onclick="loadContent()">🔄 بروزرسانی</button>
+        <button class="btn sm ghost" style="flex:1" onclick="loadGscTopicSuggestions()">🔍 پیشنهاد از GSC</button>
       </div>
     </div>
   </section>
+
+  <section class="view" id="v-content-suggest" style="display:none">
+    <div class="card">
+      <h2><span class="ico">💡</span> پیشنهاد موضوع از Search Console</h2>
+      <div class="muted-s">موضوعات با ایمپرشن بالا و CTR پایین — فرصت طلایی برای محتوا</div>
+      <div class="list" id="gscSuggestionsList" style="margin-top:10px"></div>
+      <button class="btn sm ghost" style="width:100%;margin-top:10px" onclick="document.querySelector('nav.tabs button[data-v=content]').click()">بازگشت به محتوا</button>
+    </div>
+  </section>
+
 
 
   <!-- ═══ FINANCIAL (Monthly Income) ═══ -->
@@ -491,14 +502,20 @@
         <button data-f="all">همه</button>
       </div>
       <div class="list" id="financialList"></div>
-      <div style="display:flex;gap:8px;margin-top:12px">
+            <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
         <button class="btn sm" style="flex:1" onclick="openIncomeSheet()">➕ ثبت واریز</button>
         <button class="btn sm ghost" style="flex:1" onclick="loadFinancial()">🔄 بروزرسانی</button>
+        <button class="btn sm ghost" style="flex:1" onclick="sendFinancialReminders(true)">👁 پیش‌نمایش یادآوری</button>
+        <button class="btn sm" style="flex:1;background:linear-gradient(135deg,#ff6b81,#ff3b6b)" onclick="sendFinancialReminders(false)">📤 ارسال یادآوری معوق</button>
       </div>
     </div>
     <div class="card">
       <h2><span class="ico">📋</span> قراردادهای فعال</h2>
       <div class="list" id="contractsList"></div>
+    </div>
+    <div class="card" id="financialRemindersCard" style="display:none">
+      <h2><span class="ico">📤</span> پیش‌نمایش یادآوری‌های پرداخت</h2>
+      <div class="list" id="financialRemindersList"></div>
     </div>
   </section>
 
@@ -2385,7 +2402,74 @@ async function syncGoogleToStorage(){
   }
 }
 
+
+async function sendFinancialReminders(dryRun){
+  const btnText = dryRun ? 'پیش‌نمایش' : 'ارسال';
+  toast('در حال '+btnText+' یادآوری‌ها…');
+  try{
+    const r = await api('/api/financial/send-reminders',{method:'POST',body:JSON.stringify({dry_run: dryRun, max_send: 10})});
+    const card = $('#financialRemindersCard');
+    const list = $('#financialRemindersList');
+    if(card) card.style.display='block';
+    if(list){
+      if(!r.results || !r.results.length){
+        list.innerHTML = emptyState('✅','هیچ پرداخت معوقی نیست');
+      } else {
+        list.innerHTML = r.results.map(res=>{
+          const proj = res.project_name || '';
+          const client = res.client ? res.client.name : 'کارفرما';
+          const days = res.days_overdue || 0;
+          const msg = res.message || '';
+          return `<div class="item ${days>3?'hot':''}">
+            <div class="top"><div class="t">🔴 ${esc(proj)} — ${esc(client)} — ${fa(days)} روز معوق</div></div>
+            <div class="muted-s" style="white-space:pre-wrap;background:rgba(0,0,0,.2);padding:8px;border-radius:8px;margin-top:6px;font-size:11.5px">${esc(msg.slice(0,400))}…</div>
+            <div class="meta"><span>${res.send_result ? esc(res.send_result.method||'') : ''}</span></div>
+            ${!dryRun && res.send_result && res.send_result.action_uid ? `<div class="muted-s">⏳ در انتظار تأیید: ${esc(res.send_result.action_uid)}</div>` : ''}
+          </div>`;
+        }).join('') + `<div class="muted-s" style="margin-top:10px">${esc(r.summary_text||'').slice(0,500)}</div>`;
+      }
+    }
+    if(dryRun) toast('✅ پیش‌نمایش آماده شد','ok');
+    else toast('⏳ درخواست‌های ارسال ثبت شد — منتظر تأیید','ok');
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+
+async function loadGscTopicSuggestions(){
+  const list=$('#gscSuggestionsList');
+  if(!list){
+    // Create a sheet or switch view
+    // For now use content list
+    const clist=$('#contentList');
+    if(clist) clist.innerHTML = skeleton(4);
+  }
+  const targetList = list || $('#contentList');
+  if(targetList) targetList.innerHTML = skeleton(4);
+  try{
+    const data = await api('/api/content/suggest-topics?limit=20');
+    const items = data.suggestions || [];
+    if(!items.length){
+      if(targetList) targetList.innerHTML = emptyState('💡','پیشنهادی از GSC یافت نشد — اتصال GSC را چک کن یا از محصولات استفاده کن');
+      return;
+    }
+    if(targetList){
+      targetList.innerHTML = items.map(s=>`<div class="item" onclick="document.getElementById('cg-topic').value='${esc(s.topic).replace(/'/g, "\\'")}'; openContentGenerateSheet()">
+        <div class="top"><div class="t">💡 ${esc(s.topic)}</div><span class="badge b-normal">${esc(s.source)}</span></div>
+        <div class="muted-s">${esc(s.reason)}</div>
+        <div class="meta"><span>نمایش: ${fa(Math.round(s.impressions||0))}</span><span>CTR: ${((s.ctr||0)*100).toFixed(1)}٪</span><span>جایگاه: ${fa((s.position||0).toFixed(1))}</span></div>
+        <div style="margin-top:6px"><button class="btn sm" style="width:100%">✨ تولید مقاله برای این موضوع</button></div>
+      </div>`).join('');
+    }
+    // Switch to content tab if needed
+    if(!document.getElementById('v-content').classList.contains('active')){
+      document.querySelector('nav.tabs button[data-v=content]').click();
+    }
+  }catch(e){
+    if(targetList) targetList.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+
 /* ---------- navigation ---------- */
+
 
 
 
@@ -2967,7 +3051,74 @@ async function syncGoogleToStorage(){
   }
 }
 
+
+async function sendFinancialReminders(dryRun){
+  const btnText = dryRun ? 'پیش‌نمایش' : 'ارسال';
+  toast('در حال '+btnText+' یادآوری‌ها…');
+  try{
+    const r = await api('/api/financial/send-reminders',{method:'POST',body:JSON.stringify({dry_run: dryRun, max_send: 10})});
+    const card = $('#financialRemindersCard');
+    const list = $('#financialRemindersList');
+    if(card) card.style.display='block';
+    if(list){
+      if(!r.results || !r.results.length){
+        list.innerHTML = emptyState('✅','هیچ پرداخت معوقی نیست');
+      } else {
+        list.innerHTML = r.results.map(res=>{
+          const proj = res.project_name || '';
+          const client = res.client ? res.client.name : 'کارفرما';
+          const days = res.days_overdue || 0;
+          const msg = res.message || '';
+          return `<div class="item ${days>3?'hot':''}">
+            <div class="top"><div class="t">🔴 ${esc(proj)} — ${esc(client)} — ${fa(days)} روز معوق</div></div>
+            <div class="muted-s" style="white-space:pre-wrap;background:rgba(0,0,0,.2);padding:8px;border-radius:8px;margin-top:6px;font-size:11.5px">${esc(msg.slice(0,400))}…</div>
+            <div class="meta"><span>${res.send_result ? esc(res.send_result.method||'') : ''}</span></div>
+            ${!dryRun && res.send_result && res.send_result.action_uid ? `<div class="muted-s">⏳ در انتظار تأیید: ${esc(res.send_result.action_uid)}</div>` : ''}
+          </div>`;
+        }).join('') + `<div class="muted-s" style="margin-top:10px">${esc(r.summary_text||'').slice(0,500)}</div>`;
+      }
+    }
+    if(dryRun) toast('✅ پیش‌نمایش آماده شد','ok');
+    else toast('⏳ درخواست‌های ارسال ثبت شد — منتظر تأیید','ok');
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+
+async function loadGscTopicSuggestions(){
+  const list=$('#gscSuggestionsList');
+  if(!list){
+    // Create a sheet or switch view
+    // For now use content list
+    const clist=$('#contentList');
+    if(clist) clist.innerHTML = skeleton(4);
+  }
+  const targetList = list || $('#contentList');
+  if(targetList) targetList.innerHTML = skeleton(4);
+  try{
+    const data = await api('/api/content/suggest-topics?limit=20');
+    const items = data.suggestions || [];
+    if(!items.length){
+      if(targetList) targetList.innerHTML = emptyState('💡','پیشنهادی از GSC یافت نشد — اتصال GSC را چک کن یا از محصولات استفاده کن');
+      return;
+    }
+    if(targetList){
+      targetList.innerHTML = items.map(s=>`<div class="item" onclick="document.getElementById('cg-topic').value='${esc(s.topic).replace(/'/g, "\\'")}'; openContentGenerateSheet()">
+        <div class="top"><div class="t">💡 ${esc(s.topic)}</div><span class="badge b-normal">${esc(s.source)}</span></div>
+        <div class="muted-s">${esc(s.reason)}</div>
+        <div class="meta"><span>نمایش: ${fa(Math.round(s.impressions||0))}</span><span>CTR: ${((s.ctr||0)*100).toFixed(1)}٪</span><span>جایگاه: ${fa((s.position||0).toFixed(1))}</span></div>
+        <div style="margin-top:6px"><button class="btn sm" style="width:100%">✨ تولید مقاله برای این موضوع</button></div>
+      </div>`).join('');
+    }
+    // Switch to content tab if needed
+    if(!document.getElementById('v-content').classList.contains('active')){
+      document.querySelector('nav.tabs button[data-v=content]').click();
+    }
+  }catch(e){
+    if(targetList) targetList.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+
 /* ---------- navigation ---------- */
+
 
 
 

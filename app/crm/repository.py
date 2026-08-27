@@ -28,6 +28,7 @@ def create_contact(
     phone: str | None = None,
     email: str | None = None,
     telegram: str | None = None,
+    telegram_chat_id: int | None = None,
     status: str = "lead",
     tags: list[str] | None = None,
     notes: str | None = None,
@@ -40,11 +41,11 @@ def create_contact(
     uid = db.new_uid("crmc")
     cur = db.execute(
         """INSERT INTO crm_contacts
-           (contact_uid, project_id, name, company, role, phone, email, telegram,
+           (contact_uid, project_id, name, company, role, phone, email, telegram, telegram_chat_id,
             status, tags, notes, source, owner, created_by, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
-            uid, project_id, name.strip(), company, role, phone, email, telegram,
+            uid, project_id, name.strip(), company, role, phone, email, telegram, telegram_chat_id,
             status, json.dumps(tags or [], ensure_ascii=False),
             notes, source, owner, created_by, t, t,
         ),
@@ -85,7 +86,7 @@ def list_contacts(
 
 
 def update_contact(contact_uid: str, **fields: Any) -> sqlite3.Row | None:
-    allowed = {"name", "company", "role", "phone", "email", "telegram", "status", "tags", "notes", "source", "owner", "project_id", "last_contact_at"}
+    allowed = {"name", "company", "role", "phone", "email", "telegram", "telegram_chat_id", "status", "tags", "notes", "source", "owner", "project_id", "last_contact_at"}
     sets, params = [], []
     for k, v in fields.items():
         if k not in allowed:

@@ -252,6 +252,7 @@ CREATE TABLE IF NOT EXISTS project_people (
     name            TEXT NOT NULL,
     role            TEXT,
     contact         TEXT,
+    telegram_chat_id INTEGER,
     responsibility  TEXT,
     is_internal     INTEGER DEFAULT 1,
     notes           TEXT,
@@ -288,6 +289,7 @@ CREATE TABLE IF NOT EXISTS crm_contacts (
     phone           TEXT,
     email           TEXT,
     telegram        TEXT,
+    telegram_chat_id INTEGER,
     status          TEXT DEFAULT 'lead',  -- lead | prospect | customer | partner | archived
     tags            TEXT DEFAULT '[]',
     notes           TEXT,

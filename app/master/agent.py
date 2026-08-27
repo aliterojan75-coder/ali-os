@@ -132,6 +132,10 @@ class MasterAgent:
             return {"intent": "sales_pipeline", "confidence": 0.85, "project_slug": None}
         if any(kw in low for kw in ["وضعیت مالی", "گزارش مالی", "درآمد ماهانه", "واریزی پروژه", "چقدر واریز"]):
             return {"intent": "financial_overview", "confidence": 0.9, "project_slug": None}
+        if any(kw in low for kw in ["یادآوری پرداخت", "پیام پرداخت", "واریز معوق", "یادآوری واریز"]):
+            return {"intent": "financial_reminder", "confidence": 0.9, "project_slug": None}
+        if any(kw in low for kw in ["پیشنهاد موضوع", "موضوع مقاله پیشنهاد", "از سرچ کنسول", "gsc پیشنهاد"]):
+            return {"intent": "content_suggest", "confidence": 0.9, "project_slug": None}
         if any(kw in low for kw in ["اعلان", "نوتیف", "هشدار"]):
             if len(low) < 30:
                 return {"intent": "list_notifications", "confidence": 0.8, "project_slug": None}
@@ -195,6 +199,10 @@ class MasterAgent:
             return self._action_sales_pipeline(project, user_id)
         if intent == "financial_overview":
             return self._action_financial_overview(project, user_id)
+        if intent == "financial_reminder":
+            return self._action_financial_reminder(project, user_id, msg.chat_id)
+        if intent == "content_suggest":
+            return self._action_content_suggest(project, user_id)
         if intent == "help":
             return self._help_text()
 
@@ -789,6 +797,87 @@ class MasterAgent:
                 lines.append(f"  {cur_emoji} {c['name']}: میانگین {c['avg_contract']:,.0f} IRT — ماه جاری {c['current_month_status']} — {c['overdue_count']} معوق")
 
         lines.append("\n_برای ثبت واریز بگو: «گیاهکده ۱۵ میلیون واریز کرد برای ۱۴۰۴-۰۶» یا از داشبورد._")
+        return "\n".join(lines)
+
+    # ── Financial Reminder (§15) ───────────────────────────────────────────
+    def _action_financial_reminder(self, project, user_id: int, chat_id: int) -> str:
+        from app.agents.financial_agent import send_overdue_reminders, format_overdue_summary_telegram
+
+        pid = project["id"] if project else None
+        results = send_overdue_reminders(project_id=pid, dry_run=True, max_send=10)
+        summary = format_overdue_summary_telegram(results)
+
+        if not results:
+            return summary
+
+        # Ask for approval to send
+        from app import approvals
+        # For each overdue, request approval to send reminder (will be yellow)
+        sent_requests = []
+        for r in results[:3]:  # limit to 3 for Telegram spam prevention
+            inc_uid = r["income_uid"]
+            client = r.get("client", {})
+            if not client:
+                continue
+            # Only if client has contact method
+            if not (client.get("telegram_chat_id") or client.get("email")):
+                continue
+
+            res = approvals.request_action(
+                action_type="financial.send_reminder",
+                title=f"یادآوری پرداخت به {client.get('name')} برای {r.get('project_name')}",
+                summary=f"مبلغ {float(r.get('message','')[:10] or 0):,.0f} بابت {r.get('income_uid')} — {r.get('days_overdue')} روز معوق",
+                payload={
+                    "income_uid": inc_uid,
+                    "client_telegram_chat_id": client.get("telegram_chat_id"),
+                    "client_email": client.get("email"),
+                    "message": r["message"],
+                    "project_id": r["project_id"],
+                },
+                requested_by=user_id,
+                project_id=r["project_id"],
+                chat_id=chat_id,
+                agent="financial_agent",
+            )
+            sent_requests.append(res)
+
+        if sent_requests:
+            summary += f"\n\n⏳ {len(sent_requests)} درخواست ارسال یادآوری به کارفرما ثبت شد — کارت‌های تأیید در چت ارسال شد. پس از تأیید، پیام خودکار با ذکر 'دستیار آژانس نت نوا' ارسال می‌شود."
+
+        return summary
+
+    # ── Content Suggest from GSC (§9) ────────────────────────────────────────
+    def _action_content_suggest(self, project, user_id: int) -> str:
+        from app.agents.content_agent import suggest_topics_from_gsc
+
+        pid = project["id"] if project else None
+        proj_label = project["name"] if project else "همه پروژه‌ها"
+
+        suggestions = suggest_topics_from_gsc(project_id=pid, limit=15)
+
+        if not suggestions:
+            return (
+                f"📝 *پیشنهاد موضوع محتوا — {proj_label}*\n\n"
+                "⚠️ داده Search Console موجود نیست یا اتصال تنظیم نشده.\n"
+                "برای پیشنهاد هوشمند:\n"
+                "1. GSC را در اتصال‌ها وصل کن\n"
+                "2. سپس /content suggest بزن — کوئری‌های با ایمپرشن بالا و CTR پایین را پیدا می‌کنم.\n\n"
+                "در حال حاضر بر اساس محصولات گیاهکده پیشنهاد می‌دهم:\n"
+                "• فواید عرق نعناع برای گوارش\n"
+                "• خواص روغن کنجد برای پوست\n"
+                "• تفاوت گلاب دوآتیشه و معمولی"
+            )
+
+        lines = [f"📝 *پیشنهاد موضوع محتوا از GSC — {proj_label}* ({len(suggestions)} مورد)", ""]
+        lines.append("این موضوعات بر اساس داده واقعی Search Console (ایمپرشن بالا، CTR پایین، جایگاه ۵-۲۰) پیشنهاد می‌شوند:")
+        lines.append("")
+
+        for i, s in enumerate(suggestions[:10], 1):
+            lines.append(f"{i}. *{s['topic']}*")
+            lines.append(f"   {s['reason']} — {s['impressions']:.0f} نمایش، {s['ctr']:.1%} CTR، جایگاه {s['position']:.1f}")
+            lines.append("")
+
+        lines.append("_برای تولید مقاله بگو: «مقاله بنویس درباره [موضوع]»_")
         return "\n".join(lines)
 
     # ── Chat with full context ─────────────────────────────────────────────

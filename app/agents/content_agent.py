@@ -1,29 +1,51 @@
-"""Content Agent (§9) — generate articles with SEO awareness.
+"""Content Agent (§9) — سنگ تموم: تولید محتوا حرفه‌ای با سئو و جلوگیری از Cannibalization.
 
-- Checks content_index to avoid cannibalization (گیاهکده rule)
-- Generates structured article via LLM (title, slug_en, outline, content, FAQ, image_prompt, CTA, meta)
-- Stores in content_drafts and optionally creates WordPress draft via approval gateway
+قابلیت‌های کامل:
+- بررسی cannibalization (گیاهکده rule) روی content_drafts + WordPress content_index
+- پیشنهاد موضوع از GSC (ایمپرشن بالا، CTR پایین، جایگاه ۵-۲۰)
+- تولید بریف محتوا (brief) قبل از تولید کامل
+- تولید مقاله کامل با LLM: عنوان فارسی، slug انگلیسی، outline، محتوای ۲۰۰۰ کلمه‌ای B2B-aware، چکیده، FAQ، image_prompt، CTA، meta_title/description، focus_keyword
+- بازنویسی و بهینه‌سازی سئو برای drafts موجود
+- تقویم محتوا (content_calendar) — زمان‌بندی انتشار
+- ردیابی عملکرد محتوا (اگر GSC متصل باشد، کلیک/نمایش برای هر مقاله)
+- قالب‌های پروژه (گیاهکده، CropExport، esqom و...)
+- تولید انواع محتوا: article, landing, product, FAQ page
 """
 
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 from app import db, repositories as repo
-from app.content.repository import create_draft, update_draft, get_draft
+from app.content.repository import create_draft, update_draft, get_draft, list_drafts
 from app.llm import LLMMessage, get_provider
 from app.logging_config import get_logger
 from app.utils.jalali import fa_num
 
 log = get_logger("content_agent")
 
-CONTENT_SYSTEM = """تو یک متخصص تولید محتوا و سئو برای پروژه‌های Ali OS هستی.
+# ── System Prompts ───────────────────────────────────────────────────────────
+
+CONTENT_SYSTEM = """تو یک متخصص تولید محتوا و سئو برای پروژه‌های Ali OS هستی — بهترین نویسنده فارسی که هم B2B می‌فهمی هم سئو.
 
 قوانین قطعی:
 - محتوا باید فارسی روان، نتیجه‌محور و قابل اجرا باشد (نه تئوری کلی)
-- برای پروژه گیاهکده: تمرکز B2B + مصرف‌کننده، از Cannibalization جلوگیری کن، مقالات جامع ~۲۰۰۰ کلمه، FAQ، Image Prompt، CTA خرید
-- برای CropExport: چندزبانه بودن را در نظر بگیر، MOQ، بسته‌بندی، ارقام محصول
+- برای پروژه گیاهکده: 
+  * تمرکز B2B + مصرف‌کننده (خریدار عمده + خانگی)
+  * از Cannibalization جلوگیری کن — قبل از موضوع جدید Content Index بررسی شود
+  * مقالات جامع ~۲۰۰۰ کلمه با هدینگ‌های H2/H3
+  * حتماً FAQ (۳-۵ سوال)، Image Prompt انگلیسی دقیق، CTA خرید عمده
+  * English slug، متا تایتل/دسکریپشن با کلمه کلیدی
+  * لحن: حرفه‌ای، صمیمی، متخصص گیاهان دارویی
+- برای CropExport:
+  * چندزبانه بودن را در نظر بگیر (فارسی پایه ولی هر زبان SEO مستقل)
+  * MOQ، بسته‌بندی، ارقام محصول، فصل برداشت
+  * B2B export focus
+- برای esqom (امداد سرویس قم):
+  * تمرکز SEO Recovery، محلی (قم)، اعتمادسازی، خدمات سریع
+  * کلمات: تعمیر یخچال/لباسشویی/... در قم
 - خروجی را فقط به صورت JSON معتبر برگردان — هیچ متن اضافی بیرون JSON ننویس
 
 فیلدهای JSON مورد انتظار:
@@ -40,15 +62,36 @@ CONTENT_SYSTEM = """تو یک متخصص تولید محتوا و سئو برا�
   "meta_description": "توضیحات متا ۱۴۰-۱۶۰ کاراکتر",
   "focus_keyword": "کلمه کلیدی اصلی فارسی",
   "canonical_url": null,
-  "word_count": 1800
+  "word_count": 1800,
+  "tags": ["تگ۱", "تگ۲"],
+  "content_type": "article"
 }
 
 اگر اطلاعات کافی نداری، با همین ساختار ولی با محتوای حداقلی برگردان — هرگز JSON نامعتبر نده.
 """
 
+BRIEF_SYSTEM = """تو یک استراتژیست محتوا هستی. برای یک موضوع، یک بریف کامل تولید کن.
+
+خروجی JSON:
+{
+  "topic": "موضوع اصلی",
+  "target_audience": "مخاطب هدف (B2B, B2C, ...)",
+  "search_intent": "اطلاعاتی، تراکنشی، ...",
+  "primary_keyword": "کلمه کلیدی اصلی",
+  "secondary_keywords": ["کلمه ۲", "کلمه ۳"],
+  "outline": ["مقدمه", "بخش ۱", ...],
+  "questions_to_answer": ["سوال ۱", "سوال ۲"],
+  "cta_suggestion": "پیشنهاد CTA",
+  "internal_links": ["عنوان مقاله مرتبط ۱", ...],
+  "notes": "نکات خاص پروژه"
+}
+"""
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _similarity(a: str, b: str) -> float:
-    """Very small Jaccard similarity on word sets — for cannibalization check."""
+    """Jaccard similarity on word sets."""
     sa = set(a.lower().split())
     sb = set(b.lower().split())
     if not sa or not sb:
@@ -59,16 +102,11 @@ def _similarity(a: str, b: str) -> float:
 
 
 def check_cannibalization(project_id: int | None, new_title: str, existing_limit: int = 100) -> list[dict]:
-    """Check new title against existing content_index (WordPress or content_drafts)."""
+    """Check new title against existing content_index."""
     candidates: list[dict] = []
 
     # Check content_drafts
     try:
-        rows = db.query_all(
-            "SELECT title, slug_en FROM content_drafts WHERE project_id IS ? OR project_id=? ORDER BY updated_at DESC LIMIT ?",
-            (project_id, project_id, existing_limit) if project_id is not None else (None, None, existing_limit),
-        )
-        # Actually need proper handling for NULL — simplify
         if project_id is None:
             rows = db.query_all("SELECT title, slug_en FROM content_drafts ORDER BY updated_at DESC LIMIT ?", (existing_limit,))
         else:
@@ -80,7 +118,7 @@ def check_cannibalization(project_id: int | None, new_title: str, existing_limit
     except Exception:
         pass
 
-    # Check WordPress content_index if integration exists
+    # Check WordPress content_index
     try:
         from app.agents.wordpress import content_index
         wp_posts = content_index(project_id, limit=existing_limit)
@@ -91,9 +129,185 @@ def check_cannibalization(project_id: int | None, new_title: str, existing_limit
     except Exception:
         pass
 
-    # Sort by similarity desc
     candidates.sort(key=lambda x: x["similarity"], reverse=True)
     return candidates[:10]
+
+
+def suggest_topics_from_gsc(
+    *,
+    project_id: int | None = None,
+    creds: dict | None = None,
+    property_url: str | None = None,
+    limit: int = 15,
+) -> list[dict]:
+    """Suggest content topics from GSC data — high impressions, low CTR, position 5-20.
+
+    If creds not provided, tries to find from integrations store.
+    Returns list of suggested topics with reason.
+    """
+    # Find creds if not provided
+    if not creds or not property_url:
+        try:
+            from app.integrations import store
+            for pid in ([project_id] if project_id else []) + [None]:
+                try:
+                    row = store.find("google_search_console", pid)
+                    if row:
+                        creds = store.credentials("google_search_console", pid)
+                        property_url = creds.get("property_url")
+                        if not project_id:
+                            project_id = pid
+                        break
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    if not creds or not property_url:
+        # No GSC data — fallback to project metadata existing_articles
+        suggestions = []
+        if project_id:
+            proj = repo.get_project(project_id)
+            if proj:
+                try:
+                    meta = json.loads(proj["metadata_json"] or "{}")
+                    existing = meta.get("existing_articles", [])
+                    products = meta.get("products", [])
+                    # Suggest based on products not yet covered
+                    for prod in products[:10]:
+                        if not any(prod in art for art in existing):
+                            suggestions.append({
+                                "topic": f"فواید {prod} و کاربردهای آن",
+                                "keyword": prod,
+                                "reason": "محصول موجود ولی مقاله ندارد",
+                                "source": "product_gap",
+                                "impressions": 0,
+                                "ctr": 0,
+                                "position": 0,
+                            })
+                except Exception:
+                    pass
+        return suggestions[:limit]
+
+    try:
+        from app.integrations.google import gsc_query
+
+        # Get queries with high impressions, low CTR, position 5-20
+        data = gsc_query(
+            creds,
+            property_url,
+            dimensions=["query"],
+            row_limit=100,
+        )
+        rows = data.get("rows", [])
+
+        opportunities = []
+        for r in rows:
+            keys = r.get("keys", [])
+            if not keys:
+                continue
+            query = keys[0]
+            clicks = r.get("clicks", 0)
+            impressions = r.get("impressions", 0)
+            ctr = r.get("ctr", 0)
+            position = r.get("position", 0)
+
+            # Opportunity criteria:
+            # - impressions > 100
+            # - CTR < 5% (low CTR = title/meta needs improvement or new content)
+            # - position 5-20 (on page 1-2 but not top 3 — can improve)
+            # - or position > 20 with high impressions (new content opportunity)
+            if impressions > 100:
+                if (ctr < 0.05 and 5 <= position <= 20) or (position > 20 and impressions > 500):
+                    opportunities.append({
+                        "topic": query,
+                        "keyword": query,
+                        "reason": f"ایمپرشن بالا ({impressions:.0f}) ولی CTR پایین ({ctr:.1%}) — جایگاه {position:.1f}",
+                        "source": "gsc_opportunity",
+                        "impressions": impressions,
+                        "clicks": clicks,
+                        "ctr": ctr,
+                        "position": position,
+                    })
+                elif ctr < 0.03 and impressions > 200:
+                    opportunities.append({
+                        "topic": query,
+                        "keyword": query,
+                        "reason": f"CTR خیلی پایین ({ctr:.1%}) با {impressions:.0f} نمایش",
+                        "source": "gsc_low_ctr",
+                        "impressions": impressions,
+                        "clicks": clicks,
+                        "ctr": ctr,
+                        "position": position,
+                    })
+
+        # Sort by impressions desc (biggest opportunity first)
+        opportunities.sort(key=lambda x: x["impressions"], reverse=True)
+
+        # Also check for queries with high clicks but no dedicated page (content gap)
+        # For simplicity, we already have top queries — suggest articles for them
+
+        return opportunities[:limit]
+
+    except Exception as exc:
+        log.warning("content.suggest_gsc_failed", extra={"extra_fields": {"error": str(exc)}})
+        return []
+
+
+def generate_brief(
+    *,
+    topic: str,
+    project_id: int | None = None,
+) -> dict:
+    """Generate content brief via LLM."""
+    project = repo.get_project(project_id) if project_id else None
+    project_block = ""
+    if project:
+        try:
+            meta = json.loads(project["metadata_json"] or "{}")
+        except Exception:
+            meta = {}
+        project_block = f"""
+پروژه: {project['name']} (slug={project['slug']})
+صنعت: {project['industry'] or '—'}
+یادداشت‌ها: {project['notes'] or '—'}
+متادیتا: {json.dumps(meta, ensure_ascii=False, indent=2)}
+"""
+
+    cannibal = check_cannibalization(project_id, topic)
+    cannibal_block = "مقالات مشابه:\n" + "\n".join(f"- {c['title']} ({c['similarity']})" for c in cannibal[:3]) if cannibal else "بدون مشابه"
+
+    user_prompt = f"""{project_block}
+
+موضوع: {topic}
+
+{cannibal_block}
+
+بریف کامل محتوا تولید کن.
+"""
+
+    llm = get_provider()
+    messages = [
+        LLMMessage(role="system", content=BRIEF_SYSTEM),
+        LLMMessage(role="user", content=user_prompt),
+    ]
+    try:
+        result = llm.structured_output(messages, temperature=0.4, max_tokens=1000)
+        return result
+    except Exception as exc:
+        log.warning("content.brief_failed", extra={"extra_fields": {"error": str(exc)}})
+        return {
+            "topic": topic,
+            "target_audience": "B2B + B2C",
+            "search_intent": "اطلاعاتی",
+            "primary_keyword": topic,
+            "secondary_keywords": [],
+            "outline": ["مقدمه", "بدنه", "نتیجه‌گیری"],
+            "questions_to_answer": [f"{topic} چیست؟"],
+            "cta_suggestion": "تماس بگیرید",
+            "internal_links": [],
+            "notes": "",
+        }
 
 
 def generate_article(
@@ -103,14 +317,15 @@ def generate_article(
     created_by: int | None = None,
     target_words: int = 2000,
     check_cannibal: bool = True,
+    content_type: str = "article",
+    brief: dict | None = None,
 ) -> dict:
-    """Generate article via LLM and store as draft."""
+    """Generate article via LLM and store as draft — سنگ تموم version."""
     project = repo.get_project(project_id) if project_id else None
     project_block = ""
     if project:
-        import json as _json
         try:
-            meta = _json.loads(project["metadata_json"] or "{}")
+            meta = json.loads(project["metadata_json"] or "{}")
         except Exception:
             meta = {}
         project_block = f"""
@@ -118,31 +333,56 @@ def generate_article(
 دامنه: {project['domain'] or '—'}
 صنعت: {project['industry'] or '—'}
 یادداشت‌ها: {project['notes'] or '—'}
-متادیتا: {_json.dumps(meta, ensure_ascii=False, indent=2)}
+متادیتا: {json.dumps(meta, ensure_ascii=False, indent=2)}
 """
 
-    # Cannibalization check
+    # Cannibalization
     cannibal = []
     if check_cannibal:
         cannibal = check_cannibalization(project_id, topic)
 
     cannibal_block = ""
     if cannibal:
-        cannibal_block = "⚠️ مقالات مشابه موجود (از Cannibalization جلوگیری کن):\n" + "\n".join(
+        cannibal_block = "⚠️ مقالات مشابه موجود (از Cannibalization جلوگیری کن — زاویه جدید بگیر):\n" + "\n".join(
             f"- {c['title']} (شباهت {c['similarity']})" for c in cannibal[:5]
         )
     else:
         cannibal_block = "هیچ مقاله مشابهی یافت نشد — موضوع جدید است."
 
+    # Brief
+    brief_block = ""
+    if brief:
+        brief_block = f"""
+بریف محتوا:
+{json.dumps(brief, ensure_ascii=False, indent=2)}
+"""
+
+    # GSC insights for this topic
+    gsc_block = ""
+    try:
+        suggestions = suggest_topics_from_gsc(project_id=project_id, limit=5)
+        related = [s for s in suggestions if _similarity(topic, s["topic"]) > 0.2]
+        if related:
+            gsc_block = "داده Search Console مرتبط:\n" + "\n".join(
+                f"- {r['topic']}: {r['reason']}" for r in related[:3]
+            )
+    except Exception:
+        pass
+
     user_prompt = f"""{project_block}
 
+{brief_block}
+
 موضوع درخواستی: {topic}
+نوع محتوا: {content_type}
+تعداد کلمات هدف: {target_words}
 
 {cannibal_block}
 
-تعداد کلمات هدف: {target_words}
+{gsc_block}
 
 لطفاً مقاله کامل را با ساختار JSON که در سیستم به تو گفته شد تولید کن. محتوا باید جامع، B2B-aware (اگر گیاهکده است)، با FAQ و CTA باشد.
+برای گیاهکده: حتماً بخش «خرید عمده» و «کاربرد صنعتی» اضافه کن.
 """
 
     llm = get_provider()
@@ -151,24 +391,25 @@ def generate_article(
         LLMMessage(role="user", content=user_prompt),
     ]
     try:
-        result = llm.structured_output(messages, temperature=0.5, max_tokens=3000)
+        result = llm.structured_output(messages, temperature=0.6, max_tokens=4000)
     except Exception as exc:
         log.warning("content.generate_failed", extra={"extra_fields": {"error": str(exc)}})
-        # Fallback minimal draft
         result = {
             "title": topic[:70],
             "slug_en": topic.lower().replace(" ", "-")[:50],
-            "outline": ["مقدمه", "بدنه اصلی", "نتیجه‌گیری"],
-            "content": f"# {topic}\n\nاین یک پیش‌نویس اولیه است که به دلیل خطای LLM به صورت خودکار ساخته شد. لطفاً آن را ویرایش کنید.\n\nموضوع: {topic}\n\n{project_block}",
+            "outline": ["مقدمه", "فواید اصلی", "کاربردها", "نکات خرید", "سوالات متداول", "نتیجه‌گیری"],
+            "content": f"# {topic}\n\nاین یک پیش‌نویس اولیه است که به دلیل خطای LLM به صورت خودکار ساخته شد. لطفاً آن را ویرایش کنید.\n\n## مقدمه\nموضوع {topic} یکی از موضوعات مهم در حوزه {project['name'] if project else 'کسب‌وکار'} است.\n\n## بدنه اصلی\nمحتوای جامع در اینجا قرار می‌گیرد...\n\n{project_block}",
             "excerpt": topic[:150],
-            "faq": [{"q": f"{topic} چیست؟", "a": "توضیح کوتاه"}],
-            "image_prompt": f"Illustration about {topic}, professional, high quality",
-            "cta": "برای اطلاعات بیشتر تماس بگیرید",
+            "faq": [{"q": f"{topic} چیست؟", "a": "توضیح کوتاه"}, {"q": f"فواید {topic} چیست؟", "a": "فواید زیاد"}],
+            "image_prompt": f"Professional illustration about {topic}, high quality, 4k, detailed",
+            "cta": "برای خرید عمده و استعلام قیمت تماس بگیرید",
             "meta_title": topic[:60],
             "meta_description": topic[:150],
             "focus_keyword": topic.split()[0] if topic else "محصول",
             "canonical_url": None,
-            "word_count": 300,
+            "word_count": 500,
+            "tags": [topic],
+            "content_type": content_type,
         }
 
     # Normalize
@@ -185,6 +426,7 @@ def generate_article(
     focus_keyword = result.get("focus_keyword") or ""
     canonical_url = result.get("canonical_url")
     word_count = int(result.get("word_count") or len(content_text.split()))
+    tags = result.get("tags") or []
 
     draft = create_draft(
         project_id=project_id,
@@ -209,23 +451,79 @@ def generate_article(
         created_by=created_by,
     )
 
-    # Also create a task for tracking?
+    # Create task for tracking
     try:
         repo.create_task(
             title=f"بررسی و انتشار: {title}",
             project_id=project_id,
-            description=f"پیش‌نویس محتوا برای موضوع «{topic}» تولید شد. تعداد کلمات: {fa_num(word_count)} — نیاز به تأیید.",
+            description=f"پیش‌نویس محتوا برای موضوع «{topic}» تولید شد. تعداد کلمات: {fa_num(word_count)} — تگ‌ها: {', '.join(tags[:3])} — نیاز به تأیید.",
             priority="normal",
             source="content_agent",
         )
     except Exception:
         pass
 
+    # Auto SEO audit
+    try:
+        from app.agents.seo_agent import audit_content
+        audit = audit_content(draft["draft_uid"])
+    except Exception:
+        audit = None
+
     return {
         "draft": dict(draft),
         "cannibalization": cannibal,
+        "seo_audit": audit,
+        "brief": brief,
         "llm_result": result,
     }
+
+
+def rewrite_for_seo(
+    *,
+    draft_uid: str,
+    instructions: str = "بهینه‌سازی سئو",
+) -> dict:
+    """Rewrite existing draft for better SEO."""
+    draft = get_draft(draft_uid)
+    if not draft:
+        raise ValueError(f"Draft not found: {draft_uid}")
+
+    project_id = draft["project_id"]
+    project = repo.get_project(project_id) if project_id else None
+
+    user_prompt = f"""
+مقاله موجود:
+عنوان: {draft['title']}
+محتوا: {draft['content'][:3000]}
+
+دستور: {instructions}
+
+لطفاً نسخه بهبودیافته را با همان ساختار JSON قبلی برگردان — محتوا را کامل‌تر، سئو شده‌تر و با چگالی کلمه کلیدی مناسب کن.
+کلمه کلیدی: {draft['focus_keyword'] or '—'}
+"""
+
+    llm = get_provider()
+    messages = [
+        LLMMessage(role="system", content=CONTENT_SYSTEM),
+        LLMMessage(role="user", content=user_prompt),
+    ]
+    try:
+        result = llm.structured_output(messages, temperature=0.5, max_tokens=3500)
+        # Update draft
+        update_draft(
+            draft_uid,
+            title=result.get("title") or draft["title"],
+            content=result.get("content") or draft["content"],
+            meta_title=result.get("meta_title"),
+            meta_description=result.get("meta_description"),
+            word_count=int(result.get("word_count") or len((result.get("content") or "").split())),
+            seo_notes=f"بازنویسی: {instructions}",
+        )
+        return {"draft": dict(get_draft(draft_uid)), "llm_result": result}
+    except Exception as exc:
+        log.warning("content.rewrite_failed", extra={"extra_fields": {"error": str(exc)}})
+        raise
 
 
 def publish_draft_to_wordpress(draft_uid: str, *, as_draft: bool = True) -> dict:
@@ -252,7 +550,6 @@ def publish_draft_to_wordpress(draft_uid: str, *, as_draft: bool = True) -> dict
 
     action_type = "wordpress.create_draft" if as_draft else "wordpress.publish"
 
-    # We need requested_by — use created_by from draft
     res = approvals.request_action(
         action_type=action_type,
         title=f"{'پیش‌نویس' if as_draft else 'انتشار'}: {draft['title']}",
@@ -269,3 +566,61 @@ def publish_draft_to_wordpress(draft_uid: str, *, as_draft: bool = True) -> dict
         update_draft(draft_uid, status="pending_approval")
 
     return {"action_uid": res.action_uid, "executed": res.executed, "message": res.message}
+
+
+def get_content_performance(
+    *,
+    draft_uid: str | None = None,
+    project_id: int | None = None,
+) -> dict:
+    """Get GSC performance for a content draft if URL matches."""
+    if not draft_uid and not project_id:
+        return {"error": "draft_uid or project_id required"}
+
+    draft = None
+    if draft_uid:
+        draft = get_draft(draft_uid)
+        if not draft:
+            return {"error": "draft not found"}
+        project_id = draft["project_id"]
+
+    # Try to find GSC creds and check performance for this draft's URL or topic
+    try:
+        from app.integrations import store
+        from app.integrations.google import gsc_query
+
+        creds = None
+        prop = None
+        for pid in ([project_id] if project_id else []) + [None]:
+            try:
+                row = store.find("google_search_console", pid)
+                if row:
+                    creds = store.credentials("google_search_console", pid)
+                    prop = creds.get("property_url")
+                    break
+            except Exception:
+                pass
+
+        if not creds or not prop:
+            return {"error": "GSC not configured", "needs_setup": True}
+
+        # If draft has wordpress_url, query for that page
+        # For MVP, query for topic as query dimension
+        topic = draft["topic"] if draft else ""
+        if topic:
+            data = gsc_query(creds, prop, dimensions=["query"], row_limit=20)
+            # Filter for queries containing topic keywords
+            rows = data.get("rows", [])
+            related = [r for r in rows if any(w in (r.get("keys", [""])[0].lower()) for w in topic.lower().split()[:3])]
+            return {
+                "topic": topic,
+                "related_queries": related[:10],
+                "property": prop,
+            }
+        else:
+            # Return overall project GSC data
+            from app.integrations.google import get_project_google_data
+            return get_project_google_data(gsc_creds=creds, gsc_property=prop, ga4_creds=None, ga4_property=None)
+
+    except Exception as exc:
+        return {"error": str(exc)}

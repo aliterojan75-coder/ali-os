@@ -70,6 +70,8 @@ ACTION_RISK: dict[str, str] = {
     "content.delete_draft": YELLOW,
     "income.delete": YELLOW,
     "financial.delete_income": YELLOW,
+    "financial.send_reminder": YELLOW,
+    "income.send_reminder": YELLOW,
     # irreversible / public / costly
     "wordpress.publish": RED,
     "wordpress.delete_post": RED,

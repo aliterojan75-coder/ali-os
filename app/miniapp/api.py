@@ -1062,6 +1062,79 @@ def content_cannibalization_api():
     return jsonify({"ok": True, "results": results})
 
 
+@api.get("/content/suggest-topics")
+def content_suggest_topics_api():
+    from app.agents.content_agent import suggest_topics_from_gsc
+
+    project_slug = request.args.get("project")
+    project_id = None
+    if project_slug:
+        p = repo.get_project(project_slug)
+        project_id = p["id"] if p else None
+    limit = min(int(request.args.get("limit", 15)), 50)
+
+    try:
+        suggestions = suggest_topics_from_gsc(project_id=project_id, limit=limit)
+        return jsonify({"ok": True, "suggestions": suggestions, "count": len(suggestions)})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@api.get("/content/performance")
+def content_performance_api():
+    from app.agents.content_agent import get_content_performance
+
+    draft_uid = request.args.get("draft_uid")
+    project_slug = request.args.get("project")
+    project_id = None
+    if project_slug:
+        p = repo.get_project(project_slug)
+        project_id = p["id"] if p else None
+
+    try:
+        perf = get_content_performance(draft_uid=draft_uid, project_id=project_id)
+        return jsonify({"ok": True, "performance": perf})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@api.post("/content/drafts/<draft_uid>/rewrite")
+def content_rewrite_api(draft_uid: str):
+    from app import approvals
+
+    body = request.get_json(silent=True) or {}
+    instructions = body.get("instructions", "بهینه‌سازی سئو و افزایش کیفیت")
+
+    telegram_id = (g.telegram_user or {}).get("id")
+    user = repo.get_user(telegram_id) if telegram_id else None
+
+    # Use content.draft_update as green, but rewrite is more heavy — use yellow
+    res = approvals.request_action(
+        action_type="content.generate",
+        title=f"بازنویسی محتوا: {draft_uid}",
+        summary=instructions,
+        payload={
+            "draft_uid": draft_uid,
+            "instructions": instructions,
+            "project_id": body.get("project_id"),
+        },
+        requested_by=user["id"] if user else None,
+        agent="miniapp",
+    )
+
+    # For MVP, directly call rewrite if executed (green would execute immediately, but content.generate is yellow)
+    # So we handle both cases
+    if res.executed:
+        try:
+            from app.agents.content_agent import rewrite_for_seo
+            result = rewrite_for_seo(draft_uid=draft_uid, instructions=instructions)
+            return jsonify({"ok": True, "executed": True, "draft": result["draft"]})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+    else:
+        return jsonify({"ok": True, "executed": False, "action_uid": res.action_uid, "message": res.message})
+
+
 # ── Google Integrations — GSC & GA4 (§4, §5) ─────────────────────────────────
 
 @api.get("/google/overview")
@@ -1461,6 +1534,79 @@ def financial_summary_api():
     contracts = project_contracts_summary()
 
     return jsonify({"ok": True, "summary": summary, "contracts": contracts})
+
+
+@api.post("/financial/send-reminders")
+def financial_send_reminders_api():
+    """Send overdue payment reminders — with approval flow.
+
+    Body: {project_slug?, dry_run: bool (default true), max_send: int}
+    If dry_run=true, only generates messages, no actual sending.
+    """
+    from app.agents.financial_agent import send_overdue_reminders, format_overdue_summary_telegram
+
+    body = request.get_json(silent=True) or {}
+    project_slug = body.get("project_slug") or request.args.get("project")
+    project_id = None
+    if project_slug:
+        p = repo.get_project(project_slug)
+        project_id = p["id"] if p else None
+
+    dry_run = body.get("dry_run", True)
+    if isinstance(dry_run, str):
+        dry_run = dry_run.lower() in ("1", "true", "yes")
+    max_send = min(int(body.get("max_send", 5)), 20)
+
+    results = send_overdue_reminders(project_id=project_id, dry_run=dry_run, max_send=max_send)
+
+    # If not dry_run, also generate summary for owner
+    summary_text = format_overdue_summary_telegram(results)
+
+    return jsonify({"ok": True, "dry_run": dry_run, "results": results, "summary_text": summary_text})
+
+
+@api.post("/financial/incomes/<income_uid>/reminder")
+def financial_single_reminder_api(income_uid: str):
+    from app.agents.financial_agent import generate_reminder_message
+    from app import approvals
+
+    body = request.get_json(silent=True) or {}
+    template = body.get("template", "overdue")
+    dry_run = body.get("dry_run", True)
+
+    try:
+        reminder = generate_reminder_message(income_uid, template=template)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+
+    if dry_run:
+        return jsonify({"ok": True, "dry_run": True, "reminder": reminder})
+
+    # Actual send via approval
+    telegram_id = (g.telegram_user or {}).get("id")
+    user = repo.get_user(telegram_id) if telegram_id else None
+
+    client = reminder["client"]
+    res = approvals.request_action(
+        action_type="financial.send_reminder",
+        title=f"یادآوری پرداخت به {client['name'] if client else 'کارفرما'}",
+        summary=f"مبلغ {float(reminder['income']['amount']):,.0f} بابت {reminder['income']['month_jalali']}",
+        payload={
+            "income_uid": income_uid,
+            "client_telegram_chat_id": client.get("telegram_chat_id") if client else None,
+            "client_email": client.get("email") if client else None,
+            "message": reminder["message"],
+            "project_id": reminder["income"]["project_id"],
+        },
+        requested_by=user["id"] if user else None,
+        project_id=reminder["income"]["project_id"],
+        agent="miniapp",
+    )
+
+    if res.executed:
+        return jsonify({"ok": True, "executed": True, "result": res.result, "reminder": reminder})
+    else:
+        return jsonify({"ok": True, "executed": False, "action_uid": res.action_uid, "reminder": reminder})
 
 
 @api.get("/health")

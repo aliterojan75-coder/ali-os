@@ -574,3 +574,86 @@ def _income_delete(payload: dict, ctx: dict) -> str:
         raise ValueError(f"رکورد یافت نشد: {uid}")
     return f"درآمد {uid} حذف شد"
 
+
+# ── Financial Reminder Sending (§15) ─────────────────────────────────────────
+
+@executor("financial.send_reminder")
+def _financial_send_reminder(payload: dict, ctx: dict) -> str:
+    """Send payment reminder to client — YELLOW approval, must be clearly automated."""
+    from app.telegram import send_message
+    from app.integrations import store
+    import time
+    from app import db
+
+    message = (payload.get("message") or "").strip()
+    if not message:
+        raise ValueError("message لازم است")
+
+    client_chat_id = payload.get("client_telegram_chat_id")
+    client_email = payload.get("client_email")
+    income_uid = payload.get("income_uid")
+
+    sent_methods = []
+
+    # Try Telegram to client
+    if client_chat_id:
+        try:
+            send_message(chat_id=int(client_chat_id), text=message)
+            sent_methods.append(f"تلگرام به {client_chat_id}")
+        except Exception as exc:
+            raise ValueError(f"ارسال تلگرام ناموفق: {exc}")
+
+    # Try Email if SMTP configured and email provided
+    if client_email:
+        try:
+            smtp_row = store.find("smtp", None)
+            if smtp_row:
+                smtp_creds = store.credentials("smtp", None)
+                import smtplib
+                from email.mime.text import MIMEText
+                from email.mime.multipart import MIMEMultipart
+
+                host = smtp_creds.get("host")
+                port = int(smtp_creds.get("port") or 587)
+                user = smtp_creds.get("username")
+                pwd = smtp_creds.get("password")
+                from_email = smtp_creds.get("from_email") or user
+
+                if host and user and pwd:
+                    msg = MIMEMultipart()
+                    msg["From"] = from_email
+                    msg["To"] = client_email
+                    msg["Subject"] = f"یادآوری پرداخت — {payload.get('project_id') or ''}"
+                    msg.attach(MIMEText(message, "plain", "utf-8"))
+
+                    if port == 465:
+                        server = smtplib.SMTP_SSL(host, port, timeout=20)
+                    else:
+                        server = smtplib.SMTP(host, port, timeout=20)
+                        server.starttls()
+                    try:
+                        server.login(user, pwd)
+                        server.send_message(msg)
+                    finally:
+                        server.quit()
+                    sent_methods.append(f"ایمیل به {client_email}")
+        except Exception as exc:
+            if not sent_methods:
+                raise ValueError(f"ارسال ایمیل ناموفق: {exc}")
+
+    if not sent_methods and not client_chat_id and not client_email:
+        return f"⚠️ تماس مستقیم کارفرما موجود نیست — پیام آماده برای ارسال دستی:\n{message[:500]}"
+
+    if income_uid:
+        try:
+            from app.financial.repository import update_income
+            existing = db.query_one("SELECT notes FROM project_incomes WHERE income_uid=?", (income_uid,))
+            old_notes = existing["notes"] if existing and existing["notes"] else ""
+            new_note = f"{old_notes}\n[{time.strftime('%Y-%m-%d %H:%M')}] یادآوری خودکار ارسال شد via {', '.join(sent_methods)}".strip()
+            update_income(income_uid, notes=new_note)
+        except Exception:
+            pass
+
+    return f"یادآوری پرداخت ارسال شد via {', '.join(sent_methods)} — {income_uid}"
+
+
