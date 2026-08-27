@@ -134,6 +134,8 @@ class MasterAgent:
             return {"intent": "financial_overview", "confidence": 0.9, "project_slug": None}
         if any(kw in low for kw in ["یادآوری پرداخت", "پیام پرداخت", "واریز معوق", "یادآوری واریز"]):
             return {"intent": "financial_reminder", "confidence": 0.9, "project_slug": None}
+        if any(kw in low for kw in ["پیگیری بده", "پیگیری فروش", "پیام پیگیری", "بده بهش پیام", "ارسال پیام به مشتری", "ارسال پیام به مخاطب"]):
+            return {"intent": "sales_followup", "confidence": 0.9, "project_slug": None}
         if any(kw in low for kw in ["پیشنهاد موضوع", "موضوع مقاله پیشنهاد", "از سرچ کنسول", "gsc پیشنهاد"]):
             return {"intent": "content_suggest", "confidence": 0.9, "project_slug": None}
         if any(kw in low for kw in ["اعلان", "نوتیف", "هشدار"]):
@@ -201,6 +203,8 @@ class MasterAgent:
             return self._action_financial_overview(project, user_id)
         if intent == "financial_reminder":
             return self._action_financial_reminder(project, user_id, msg.chat_id)
+        if intent == "sales_followup":
+            return self._action_sales_followup(project, user_id, msg.chat_id)
         if intent == "content_suggest":
             return self._action_content_suggest(project, user_id)
         if intent == "help":
@@ -800,6 +804,53 @@ class MasterAgent:
         return "\n".join(lines)
 
     # ── Financial Reminder (§15) ───────────────────────────────────────────
+    def _action_sales_followup(self, project, user_id: int, chat_id: int) -> str:
+        """Queue follow-up messages for stale deals — owner approves each card (P2)."""
+        from app.agents.sales_agent import analyze_sales_pipeline, prepare_followup_send
+
+        pid = project["id"] if project else None
+        pipeline = analyze_sales_pipeline(project_id=pid)
+        stale = pipeline.get("stale_deals") or pipeline.get("overdue_followups") or []
+        if not stale:
+            return "✅ دیل راکد یا پیگیری‌معوقی پیدا نشد — پایپ‌لاین تمیزه."
+
+        lines = [f"🤝 {len(stale)} دیل آماده پیگیری (۳ مورد اول):\n"]
+        queued, previews = 0, []
+        for deal in stale[:3]:
+            res = prepare_followup_send(
+                deal_uid=deal.get("deal_uid"),
+                tone="friendly",
+                dry_run=True,
+            )
+            if not res.get("ok"):
+                continue
+            if res.get("no_client_contact"):
+                previews.append(
+                    f"📎 {res.get('contact_name')}"
+                    + (f" — «{res['deal_title']}»" if res.get("deal_title") else "")
+                    + f"\n{res['message'][:220]}"
+                )
+                continue
+            sent = prepare_followup_send(
+                deal_uid=deal.get("deal_uid"),
+                tone="friendly",
+                dry_run=False,
+                requested_by=user_id,
+                chat_id=chat_id,
+            )
+            if sent.get("approval_requested"):
+                queued += 1
+                lines.append(
+                    f"🟡 کارت تأیید ارسال شد برای «{res['contact_name']}»"
+                    + (f" — {res['deal_title']}" if res.get("deal_title") else "")
+                )
+        if previews:
+            lines.append("\n📎 این دیل‌ها تلگرام مخاطب ثبت‌شده ندارند — پیام آماده (فوروارد دستی):")
+            lines.extend(previews)
+        if queued:
+            lines.append(f"\n⏳ {queued} درخواست ثبت شد — بعد از تأیید تو، پیام مستقیم به تلگرام مخاطب می‌رود و در CRM لاگ می‌شود.")
+        return "\n".join(lines)
+
     def _action_financial_reminder(self, project, user_id: int, chat_id: int) -> str:
         from app.agents.financial_agent import send_overdue_reminders, format_overdue_summary_telegram
 
