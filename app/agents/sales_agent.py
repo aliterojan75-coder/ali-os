@@ -161,6 +161,88 @@ def generate_followup_message(
     return templates.get(tone, templates["professional"])
 
 
+def prepare_followup_send(
+    *,
+    deal_uid: str | None = None,
+    contact_uid: str | None = None,
+    tone: str = "professional",
+    dry_run: bool = True,
+    requested_by: int | None = None,
+    chat_id: int | None = None,
+) -> dict:
+    """Prepare (and optionally queue for approval) a follow-up message to the client's Telegram.
+
+    Mirrors the `financial.send_reminder` pattern: nothing is ever sent directly —
+    a YELLOW approval request is created and the executor sends it after Ali confirms.
+    """
+    from app.crm.repository import get_contact, get_deal, get_contact_by_id
+
+    contact = None
+    deal = None
+    if contact_uid:
+        contact = get_contact(contact_uid)
+    if deal_uid:
+        deal = get_deal(deal_uid)
+        if deal and not contact:
+            try:
+                contact = get_contact_by_id(int(deal["contact_id"]))
+            except (ValueError, TypeError):
+                contact = get_contact(str(deal["contact_id"])) if deal.get("contact_id") else None
+            if contact is None and deal.get("contact_id"):
+                contact = get_contact(str(deal["contact_id"]))
+
+    if not contact:
+        return {"ok": False, "error": "مخاطب این دیل در CRM پیدا نشد — اول مخاطب رو ثبت کن"}
+
+    chat_id_client = contact["telegram_chat_id"] if "telegram_chat_id" in contact.keys() else None
+    message = generate_followup_message(deal_uid=deal_uid, contact_uid=contact_uid, tone=tone)
+
+    result = {
+        "ok": True,
+        "dry_run": dry_run,
+        "contact_name": contact["name"],
+        "contact_uid": contact["contact_uid"],
+        "deal_uid": deal["deal_uid"] if deal else None,
+        "deal_title": deal["title"] if deal else None,
+        "project_id": (deal["project_id"] if deal else None) or None,
+        "client_telegram_chat_id": chat_id_client,
+        "message": message,
+    }
+    if not chat_id_client:
+        result["no_client_contact"] = True
+        return result
+
+    if dry_run:
+        return result
+
+    from app import approvals
+
+    res = approvals.request_action(
+        action_type="sales.send_followup",
+        title=f"ارسال پیام پیگیری به {contact['name']}" + (f" — {deal['title']}" if deal else ""),
+        summary=f"تُن: {tone} — ارسال به تلگرام مخاطب (chat id {chat_id_client})",
+        payload={
+            "message": message,
+            "client_telegram_chat_id": chat_id_client,
+            "contact_uid": contact["contact_uid"],
+            "contact_id": contact["id"],
+            "deal_uid": deal["deal_uid"] if deal else None,
+            "project_id": result["project_id"],
+            "tone": tone,
+        },
+        requested_by=requested_by,
+        project_id=result["project_id"],
+        # کارت تأیید باید به چت علی برود، هرگز به چت مشتری
+        chat_id=chat_id,
+        agent="sales_agent",
+    )
+    result["action_uid"] = getattr(res, "action_uid", None) or (
+        res.get("action_uid") if isinstance(res, dict) else None
+    )
+    result["approval_requested"] = bool(result["action_uid"])
+    return result
+
+
 def format_sales_report_telegram(pipeline: dict) -> str:
     lines = [
         f"💼 *گزارش فروش — {fa_num(pipeline['total_deals'])} معامله در pipeline*",

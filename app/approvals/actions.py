@@ -577,6 +577,35 @@ def _income_delete(payload: dict, ctx: dict) -> str:
 
 # ── Financial Reminder Sending (§15) ─────────────────────────────────────────
 
+@executor("sales.send_followup")
+def _sales_send_followup(payload: dict, ctx: dict) -> str:
+    """Send a sales follow-up to the client's Telegram — YELLOW; logged in CRM."""
+    from app.telegram import send_message
+
+    message = (payload.get("message") or "").strip()
+    client_chat_id = payload.get("client_telegram_chat_id")
+    if not message or not client_chat_id:
+        raise ValueError("message و client_telegram_chat_id لازم است")
+
+    send_message(chat_id=int(client_chat_id), text=message)
+
+    # Log into CRM so the interaction history stays the single source of truth.
+    try:
+        from app.crm.repository import add_interaction
+        add_interaction(
+            contact_id=int(payload["contact_id"]),
+            summary="پیام پیگیری فروش (خودکار) ارسال شد",
+            content=message[:900],
+            type="message",
+            project_id=payload.get("project_id"),
+            outcome="sent",
+        )
+    except Exception as exc:  # noqa: BLE001 — the send already happened; never fail on logging
+        log.warning("sales.followup_log_failed", extra={"extra_fields": {"error": str(exc)}})
+
+    return f"✅ پیام پیگیری به تلگرام مخاطب ارسال شد (chat {client_chat_id})"
+
+
 @executor("financial.send_reminder")
 def _financial_send_reminder(payload: dict, ctx: dict) -> str:
     """Send payment reminder to client — YELLOW approval, must be clearly automated."""
