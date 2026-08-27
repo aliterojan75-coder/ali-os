@@ -180,3 +180,480 @@ def _notification_send(payload: dict, ctx: dict) -> str:
         raise ValueError("chat_id و text لازم است")
     send_message(chat_id=int(chat_id), text=text)
     return "پیام ارسال شد"
+
+
+@executor("notification.create")
+def _notification_create(payload: dict, ctx: dict) -> str:
+    from app.notifications.service import create_notification
+    title = (payload.get("title") or "").strip()
+    if not title:
+        raise ValueError("title لازم است")
+    create_notification(
+        user_id=payload.get("user_id") or ctx.get("requested_by"),
+        type=payload.get("type", "custom"),
+        title=title,
+        body=payload.get("body"),
+        related_type=payload.get("related_type"),
+        related_id=payload.get("related_id"),
+    )
+    return f"اعلان ثبت شد: {title}"
+
+
+# ── CRM (§14) ─────────────────────────────────────────────────────────────────
+
+@executor("crm.create_contact")
+def _crm_create_contact(payload: dict, ctx: dict) -> str:
+    from app.crm.repository import create_contact
+    name = (payload.get("name") or "").strip()
+    if not name:
+        raise ValueError("نام مخاطب لازم است")
+    contact = create_contact(
+        name=name,
+        project_id=payload.get("project_id") or ctx.get("project_id"),
+        company=payload.get("company"),
+        role=payload.get("role"),
+        phone=payload.get("phone"),
+        email=payload.get("email"),
+        telegram=payload.get("telegram"),
+        status=payload.get("status", "lead"),
+        tags=payload.get("tags"),
+        notes=payload.get("notes"),
+        source=payload.get("source"),
+        owner=payload.get("owner", "Ali"),
+        created_by=payload.get("created_by") or ctx.get("requested_by"),
+    )
+    return f"مخاطب ثبت شد: {contact['contact_uid']} — {name}"
+
+
+@executor("crm.update_contact")
+def _crm_update_contact(payload: dict, ctx: dict) -> str:
+    from app.crm.repository import update_contact
+    uid = payload.get("contact_uid")
+    if not uid:
+        raise ValueError("contact_uid لازم است")
+    # Remove uid from fields
+    fields = {k: v for k, v in payload.items() if k != "contact_uid"}
+    if not fields:
+        raise ValueError("هیچ فیلدی برای به‌روزرسانی داده نشد")
+    row = update_contact(uid, **fields)
+    if not row:
+        raise ValueError(f"مخاطب یافت نشد: {uid}")
+    return f"مخاطب به‌روزرسانی شد: {uid}"
+
+
+@executor("crm.delete_contact")
+def _crm_delete_contact(payload: dict, ctx: dict) -> str:
+    from app.crm.repository import delete_contact
+    uid = payload.get("contact_uid")
+    if not uid:
+        raise ValueError("contact_uid لازم است")
+    ok = delete_contact(uid)
+    if not ok:
+        raise ValueError(f"مخاطب یافت نشد: {uid}")
+    return f"مخاطب حذف شد: {uid}"
+
+
+@executor("crm.add_interaction")
+def _crm_add_interaction(payload: dict, ctx: dict) -> str:
+    from app.crm.repository import add_interaction, get_contact
+    contact_uid = payload.get("contact_uid")
+    contact_id = payload.get("contact_id")
+    if contact_uid and not contact_id:
+        c = get_contact(contact_uid)
+        if not c:
+            raise ValueError(f"مخاطب یافت نشد: {contact_uid}")
+        contact_id = c["id"]
+    if not contact_id:
+        raise ValueError("contact_id یا contact_uid لازم است")
+    summary = (payload.get("summary") or "").strip()
+    if not summary:
+        raise ValueError("خلاصه تعامل لازم است")
+    row = add_interaction(
+        contact_id=contact_id,
+        summary=summary,
+        project_id=payload.get("project_id") or ctx.get("project_id"),
+        type=payload.get("type", "note"),
+        content=payload.get("content"),
+        outcome=payload.get("outcome"),
+        next_action=payload.get("next_action"),
+        next_follow_up_at=payload.get("next_follow_up_at"),
+        created_by=payload.get("created_by") or ctx.get("requested_by"),
+    )
+    return f"تعامل ثبت شد: {row['interaction_uid']}"
+
+
+@executor("crm.create_deal")
+def _crm_create_deal(payload: dict, ctx: dict) -> str:
+    from app.crm.repository import create_deal, get_contact
+    title = (payload.get("title") or "").strip()
+    if not title:
+        raise ValueError("عنوان معامله لازم است")
+    contact_id = payload.get("contact_id")
+    if payload.get("contact_uid") and not contact_id:
+        c = get_contact(payload["contact_uid"])
+        if c:
+            contact_id = c["id"]
+    deal = create_deal(
+        title=title,
+        contact_id=contact_id,
+        project_id=payload.get("project_id") or ctx.get("project_id"),
+        amount=float(payload.get("amount") or 0),
+        currency=payload.get("currency", "IRT"),
+        stage=payload.get("stage", "lead"),
+        probability=int(payload.get("probability", 50)),
+        expected_close_at=payload.get("expected_close_at"),
+        notes=payload.get("notes"),
+        created_by=payload.get("created_by") or ctx.get("requested_by"),
+    )
+    return f"معامله ثبت شد: {deal['deal_uid']} — {title}"
+
+
+@executor("crm.update_deal")
+def _crm_update_deal(payload: dict, ctx: dict) -> str:
+    from app.crm.repository import update_deal
+    uid = payload.get("deal_uid")
+    if not uid:
+        raise ValueError("deal_uid لازم است")
+    fields = {k: v for k, v in payload.items() if k != "deal_uid"}
+    if not fields:
+        raise ValueError("هیچ فیلدی برای به‌روزرسانی داده نشد")
+    row = update_deal(uid, **fields)
+    if not row:
+        raise ValueError(f"معامله یافت نشد: {uid}")
+    return f"معامله به‌روزرسانی شد: {uid}"
+
+
+@executor("crm.update_deal_stage")
+def _crm_update_deal_stage(payload: dict, ctx: dict) -> str:
+    from app.crm.repository import update_deal
+    uid = payload.get("deal_uid")
+    stage = payload.get("stage")
+    if not uid or not stage:
+        raise ValueError("deal_uid و stage لازم است")
+    row = update_deal(uid, stage=stage, probability=payload.get("probability"))
+    if not row:
+        raise ValueError(f"معامله یافت نشد: {uid}")
+    return f"مرحله معامله {uid} → {stage}"
+
+
+@executor("crm.delete_deal")
+def _crm_delete_deal(payload: dict, ctx: dict) -> str:
+    from app.crm.repository import delete_deal
+    uid = payload.get("deal_uid")
+    if not uid:
+        raise ValueError("deal_uid لازم است")
+    ok = delete_deal(uid)
+    if not ok:
+        raise ValueError(f"معامله یافت نشد: {uid}")
+    return f"معامله حذف شد: {uid}"
+
+
+
+# ── Content Agent (§9) ────────────────────────────────────────────────────────
+
+@executor("content.draft_create")
+def _content_draft_create(payload: dict, ctx: dict) -> str:
+    from app.content.repository import create_draft
+    topic = (payload.get("topic") or payload.get("title") or "").strip()
+    title = (payload.get("title") or topic or "پیش‌نویس محتوا").strip()
+    if not topic:
+        raise ValueError("topic لازم است")
+    draft = create_draft(
+        project_id=payload.get("project_id") or ctx.get("project_id"),
+        topic=topic,
+        title=title,
+        slug_en=payload.get("slug_en"),
+        outline=payload.get("outline"),
+        content=payload.get("content"),
+        excerpt=payload.get("excerpt"),
+        faq=payload.get("faq"),
+        image_prompt=payload.get("image_prompt"),
+        cta=payload.get("cta"),
+        meta_title=payload.get("meta_title"),
+        meta_description=payload.get("meta_description"),
+        focus_keyword=payload.get("focus_keyword"),
+        canonical_url=payload.get("canonical_url"),
+        word_count=int(payload.get("word_count") or 0),
+        status=payload.get("status", "draft"),
+        created_by=payload.get("created_by") or ctx.get("requested_by"),
+    )
+    return f"پیش‌نویس محتوا ثبت شد: {draft['draft_uid']}"
+
+
+@executor("content.draft_update")
+def _content_draft_update(payload: dict, ctx: dict) -> str:
+    from app.content.repository import update_draft
+    uid = payload.get("draft_uid")
+    if not uid:
+        raise ValueError("draft_uid لازم است")
+    fields = {k: v for k, v in payload.items() if k != "draft_uid"}
+    if not fields:
+        raise ValueError("هیچ فیلدی داده نشد")
+    row = update_draft(uid, **fields)
+    if not row:
+        raise ValueError(f"پیش‌نویس یافت نشد: {uid}")
+    return f"پیش‌نویس {uid} به‌روزرسانی شد"
+
+
+@executor("content.delete_draft")
+def _content_delete_draft(payload: dict, ctx: dict) -> str:
+    from app.content.repository import delete_draft
+    uid = payload.get("draft_uid")
+    if not uid:
+        raise ValueError("draft_uid لازم است")
+    ok = delete_draft(uid)
+    if not ok:
+        raise ValueError(f"پیش‌نویس یافت نشد: {uid}")
+    return f"پیش‌نویس {uid} حذف شد"
+
+
+@executor("content.generate")
+def _content_generate(payload: dict, ctx: dict) -> str:
+    from app.agents.content_agent import generate_article
+    topic = (payload.get("topic") or "").strip()
+    if not topic:
+        raise ValueError("topic لازم است")
+    result = generate_article(
+        topic=topic,
+        project_id=payload.get("project_id") or ctx.get("project_id"),
+        created_by=payload.get("created_by") or ctx.get("requested_by"),
+        target_words=int(payload.get("target_words") or 2000),
+    )
+    draft = result["draft"]
+    cannibal = result["cannibalization"]
+    msg = f"مقاله تولید شد: {draft['draft_uid']} — {draft['title']} ({draft['word_count']} کلمه)"
+    if cannibal:
+        msg += f" — ⚠️ {len(cannibal)} مورد مشابه یافت شد"
+    return msg
+
+
+@executor("content.publish_draft")
+def _content_publish_draft(payload: dict, ctx: dict) -> str:
+    from app.content.repository import get_draft, update_draft
+    uid = payload.get("draft_uid")
+    if not uid:
+        raise ValueError("draft_uid لازم است")
+    draft = get_draft(uid)
+    if not draft:
+        raise ValueError(f"پیش‌نویس یافت نشد: {uid}")
+
+    # Create WordPress draft via internal call (will go through approval again? No, we are already in approved context)
+    # For MVP, we directly call wordpress agent's internal function if credentials exist, else just mark approved
+    try:
+        from app.agents.wordpress import _request, _build_body
+        project_id = draft["project_id"]
+        body = _build_body({
+            "title": draft["title"],
+            "content": draft["content"],
+            "slug": draft["slug_en"],
+            "excerpt": draft["excerpt"],
+            "seo_title": draft["meta_title"],
+            "seo_description": draft["meta_description"],
+            "focus_keyword": draft["focus_keyword"],
+            "status": "draft",
+        })
+        post = _request("POST", project_id, "posts", json=body)
+        update_draft(uid, status="approved", wordpress_post_id=post.get("id"), wordpress_url=post.get("link"))
+        return f"پیش‌نویس وردپرس ساخته شد: {post.get('link') or post.get('id')}"
+    except Exception as exc:
+        # If WordPress not connected, just mark approved
+        update_draft(uid, status="approved")
+        return f"تأیید شد (وردپرس متصل نیست): {exc}"
+
+
+@executor("content.publish")
+def _content_publish(payload: dict, ctx: dict) -> str:
+    from app.content.repository import get_draft, update_draft
+    uid = payload.get("draft_uid")
+    if not uid:
+        raise ValueError("draft_uid لازم است")
+    draft = get_draft(uid)
+    if not draft:
+        raise ValueError(f"پیش‌نویس یافت نشد: {uid}")
+    try:
+        from app.agents.wordpress import _request
+        project_id = draft["project_id"]
+        post_id = draft["wordpress_post_id"]
+        if post_id:
+            post = _request("POST", project_id, f"posts/{post_id}", json={"status": "publish"})
+        else:
+            from app.agents.wordpress import _build_body
+            body = _build_body({
+                "title": draft["title"],
+                "content": draft["content"],
+                "slug": draft["slug_en"],
+                "status": "publish",
+            })
+            post = _request("POST", project_id, "posts", json=body)
+        update_draft(uid, status="published", wordpress_post_id=post.get("id"), wordpress_url=post.get("link"))
+        return f"منتشر شد: {post.get('link') or post.get('id')}"
+    except Exception as exc:
+        raise ValueError(f"انتشار ناموفق: {exc}")
+
+
+@executor("seo.audit")
+def _seo_audit(payload: dict, ctx: dict) -> str:
+    from app.agents.seo_agent import audit_content
+    uid = payload.get("draft_uid")
+    if not uid:
+        raise ValueError("draft_uid لازم است")
+    result = audit_content(uid)
+    return f"سئو امتیاز {result['score']} — {len(result['issues'])} مشکل"
+
+
+
+# ── Financial — Monthly Income Tracking (redefined §15) ───────────────────────
+
+@executor("income.create")
+@executor("financial.create_income")
+def _income_create(payload: dict, ctx: dict) -> str:
+    from app.financial.repository import create_income
+    project_id = payload.get("project_id") or ctx.get("project_id")
+    if not project_id:
+        raise ValueError("project_id لازم است")
+    amount = payload.get("amount")
+    if amount is None:
+        raise ValueError("amount لازم است")
+    income = create_income(
+        project_id=int(project_id),
+        amount=float(amount),
+        month_jalali=payload.get("month_jalali"),
+        currency=payload.get("currency", "IRT"),
+        due_at=payload.get("due_at"),
+        status=payload.get("status", "pending"),
+        payment_method=payload.get("payment_method"),
+        notes=payload.get("notes"),
+        created_by=payload.get("created_by") or ctx.get("requested_by"),
+    )
+    return f"درآمد ماهانه ثبت شد: {income['income_uid']} — {income['month_jalali']} — {float(income['amount']):,.0f} {income['currency']}"
+
+
+@executor("income.update")
+@executor("financial.update_income")
+def _income_update(payload: dict, ctx: dict) -> str:
+    from app.financial.repository import update_income
+    uid = payload.get("income_uid")
+    if not uid:
+        raise ValueError("income_uid لازم است")
+    fields = {k: v for k, v in payload.items() if k != "income_uid"}
+    if not fields:
+        raise ValueError("هیچ فیلدی داده نشد")
+    row = update_income(uid, **fields)
+    if not row:
+        raise ValueError(f"رکورد یافت نشد: {uid}")
+    return f"درآمد {uid} به‌روزرسانی شد"
+
+
+@executor("income.mark_paid")
+@executor("financial.mark_paid")
+def _income_mark_paid(payload: dict, ctx: dict) -> str:
+    from app.financial.repository import mark_paid
+    uid = payload.get("income_uid")
+    if not uid:
+        raise ValueError("income_uid لازم است")
+    row = mark_paid(
+        uid,
+        paid_at=payload.get("paid_at"),
+        payment_method=payload.get("payment_method"),
+        transaction_ref=payload.get("transaction_ref"),
+    )
+    if not row:
+        raise ValueError(f"رکورد یافت نشد: {uid}")
+    return f"پرداخت ثبت شد: {uid} — {float(row['amount']):,.0f} {row['currency']} در {row['month_jalali']}"
+
+
+@executor("income.delete")
+@executor("financial.delete_income")
+def _income_delete(payload: dict, ctx: dict) -> str:
+    from app.financial.repository import delete_income
+    uid = payload.get("income_uid")
+    if not uid:
+        raise ValueError("income_uid لازم است")
+    ok = delete_income(uid)
+    if not ok:
+        raise ValueError(f"رکورد یافت نشد: {uid}")
+    return f"درآمد {uid} حذف شد"
+
+
+# ── Financial Reminder Sending (§15) ─────────────────────────────────────────
+
+@executor("financial.send_reminder")
+def _financial_send_reminder(payload: dict, ctx: dict) -> str:
+    """Send payment reminder to client — YELLOW approval, must be clearly automated."""
+    from app.telegram import send_message
+    from app.integrations import store
+    import time
+    from app import db
+
+    message = (payload.get("message") or "").strip()
+    if not message:
+        raise ValueError("message لازم است")
+
+    client_chat_id = payload.get("client_telegram_chat_id")
+    client_email = payload.get("client_email")
+    income_uid = payload.get("income_uid")
+
+    sent_methods = []
+
+    # Try Telegram to client
+    if client_chat_id:
+        try:
+            send_message(chat_id=int(client_chat_id), text=message)
+            sent_methods.append(f"تلگرام به {client_chat_id}")
+        except Exception as exc:
+            raise ValueError(f"ارسال تلگرام ناموفق: {exc}")
+
+    # Try Email if SMTP configured and email provided
+    if client_email:
+        try:
+            smtp_row = store.find("smtp", None)
+            if smtp_row:
+                smtp_creds = store.credentials("smtp", None)
+                import smtplib
+                from email.mime.text import MIMEText
+                from email.mime.multipart import MIMEMultipart
+
+                host = smtp_creds.get("host")
+                port = int(smtp_creds.get("port") or 587)
+                user = smtp_creds.get("username")
+                pwd = smtp_creds.get("password")
+                from_email = smtp_creds.get("from_email") or user
+
+                if host and user and pwd:
+                    msg = MIMEMultipart()
+                    msg["From"] = from_email
+                    msg["To"] = client_email
+                    msg["Subject"] = f"یادآوری پرداخت — {payload.get('project_id') or ''}"
+                    msg.attach(MIMEText(message, "plain", "utf-8"))
+
+                    if port == 465:
+                        server = smtplib.SMTP_SSL(host, port, timeout=20)
+                    else:
+                        server = smtplib.SMTP(host, port, timeout=20)
+                        server.starttls()
+                    try:
+                        server.login(user, pwd)
+                        server.send_message(msg)
+                    finally:
+                        server.quit()
+                    sent_methods.append(f"ایمیل به {client_email}")
+        except Exception as exc:
+            if not sent_methods:
+                raise ValueError(f"ارسال ایمیل ناموفق: {exc}")
+
+    if not sent_methods and not client_chat_id and not client_email:
+        return f"⚠️ تماس مستقیم کارفرما موجود نیست — پیام آماده برای ارسال دستی:\n{message[:500]}"
+
+    if income_uid:
+        try:
+            from app.financial.repository import update_income
+            existing = db.query_one("SELECT notes FROM project_incomes WHERE income_uid=?", (income_uid,))
+            old_notes = existing["notes"] if existing and existing["notes"] else ""
+            new_note = f"{old_notes}\n[{time.strftime('%Y-%m-%d %H:%M')}] یادآوری خودکار ارسال شد via {', '.join(sent_methods)}".strip()
+            update_income(income_uid, notes=new_note)
+        except Exception:
+            pass
+
+    return f"یادآوری پرداخت ارسال شد via {', '.join(sent_methods)} — {income_uid}"
+
+

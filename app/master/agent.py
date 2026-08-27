@@ -74,6 +74,36 @@ class MasterAgent:
             return {"intent": "list_approvals", "confidence": 0.99, "project_slug": None}
         if low in ("/connections", "/connect", "اتصال‌ها", "اتصالها", "connections"):
             return {"intent": "list_connections", "confidence": 0.99, "project_slug": None}
+        if low in ("/morning", "گزارش صبحگاهی", "صبح بخیر", "morning", "/report", "گزارش روزانه"):
+            parts = text.strip().split(maxsplit=1)
+            proj = parts[1].strip() if len(parts) > 1 else None
+            return {"intent": "morning_report", "confidence": 0.99, "project_slug": proj}
+        if low in ("/crm", "crm", "مخاطبان", "مشتریان", "سی آر ام"):
+            parts = text.strip().split(maxsplit=1)
+            proj = parts[1].strip() if len(parts) > 1 else None
+            return {"intent": "crm_overview", "confidence": 0.99, "project_slug": proj}
+        if low in ("/notify", "/notifications", "اعلان‌ها", "اعلانها", "نوتیفیکیشن", "هشدارها"):
+            return {"intent": "list_notifications", "confidence": 0.99, "project_slug": None}
+        if low in ("/content", "محتوا", "مقاله", "مقالات", "/drafts"):
+            parts = text.strip().split(maxsplit=1)
+            proj = parts[1].strip() if len(parts) > 1 else None
+            return {"intent": "content_overview", "confidence": 0.99, "project_slug": proj}
+        if low in ("/seo", "سئو", "وضعیت سئو", "seo report"):
+            parts = text.strip().split(maxsplit=1)
+            proj = parts[1].strip() if len(parts) > 1 else None
+            return {"intent": "seo_overview", "confidence": 0.99, "project_slug": proj}
+        if low in ("/business", "/ba", "تحلیل کسب‌وکار", "بیزنس", "گزارش بیزنس"):
+            parts = text.strip().split(maxsplit=1)
+            proj = parts[1].strip() if len(parts) > 1 else None
+            return {"intent": "business_analysis", "confidence": 0.99, "project_slug": proj}
+        if low in ("/sales", "فروش", "پایپ‌لاین", "pipeline", "/deals", "معاملات"):
+            parts = text.strip().split(maxsplit=1)
+            proj = parts[1].strip() if len(parts) > 1 else None
+            return {"intent": "sales_pipeline", "confidence": 0.99, "project_slug": proj}
+        if low in ("/finance", "/financial", "/income", "/incomes", "مالی", "درآمد", "واریزی", "واریزی‌ها", "درامد"):
+            parts = text.strip().split(maxsplit=1)
+            proj = parts[1].strip() if len(parts) > 1 else None
+            return {"intent": "financial_overview", "confidence": 0.99, "project_slug": proj}
         if low.startswith("/dossier") or low.startswith("پرونده"):
             rest = text.strip().split(maxsplit=1)
             return {
@@ -81,8 +111,37 @@ class MasterAgent:
                 "confidence": 0.99,
                 "project_slug": rest[1].strip() if len(rest) > 1 else None,
             }
+        if low.startswith("/content") or low.startswith("مقاله بنویس") or low.startswith("محتوا بنویس"):
+            rest = text.strip().split(maxsplit=1)
+            topic = rest[1].strip() if len(rest) > 1 else None
+            return {"intent": "generate_content", "confidence": 0.99, "project_slug": None, "topic": topic}
+        # Natural language triggers
+        if any(kw in low for kw in ["گزارش صبحگاهی", "morning report", "گزارش صبح"]):
+            return {"intent": "morning_report", "confidence": 0.95, "project_slug": None}
+        if any(kw in low for kw in ["لیست مخاطبان", "مخاطب جدید", "crm contact"]):
+            return {"intent": "crm_overview", "confidence": 0.85, "project_slug": None}
+        if any(kw in low for kw in ["مقاله بنویس", "محتوا بنویس", "content generate", "پیش‌نویس محتوا", "تولید محتوا"]):
+            return {"intent": "generate_content", "confidence": 0.9, "project_slug": None, "topic": text}
+        if any(kw in low for kw in ["لیست مقالات", "پیش‌نویس‌ها", "content drafts"]):
+            return {"intent": "content_overview", "confidence": 0.85, "project_slug": None}
+        if any(kw in low for kw in ["وضعیت سئو", "seo", "سئو سایت", "کلمات کلیدی", "ترافیک گوگل"]):
+            return {"intent": "seo_overview", "confidence": 0.85, "project_slug": None}
+        if any(kw in low for kw in ["تحلیل کسب‌وکار", "گزارش بیزنس", "business report", "سلامت کسب‌وکار"]):
+            return {"intent": "business_analysis", "confidence": 0.85, "project_slug": None}
+        if any(kw in low for kw in ["پایپ‌لاین فروش", "گزارش فروش", "وضعیت فروش", "sales report"]):
+            return {"intent": "sales_pipeline", "confidence": 0.85, "project_slug": None}
+        if any(kw in low for kw in ["وضعیت مالی", "گزارش مالی", "درآمد ماهانه", "واریزی پروژه", "چقدر واریز"]):
+            return {"intent": "financial_overview", "confidence": 0.9, "project_slug": None}
+        if any(kw in low for kw in ["یادآوری پرداخت", "پیام پرداخت", "واریز معوق", "یادآوری واریز"]):
+            return {"intent": "financial_reminder", "confidence": 0.9, "project_slug": None}
+        if any(kw in low for kw in ["پیشنهاد موضوع", "موضوع مقاله پیشنهاد", "از سرچ کنسول", "gsc پیشنهاد"]):
+            return {"intent": "content_suggest", "confidence": 0.9, "project_slug": None}
+        if any(kw in low for kw in ["اعلان", "نوتیف", "هشدار"]):
+            if len(low) < 30:
+                return {"intent": "list_notifications", "confidence": 0.8, "project_slug": None}
 
         messages = [
+
             LLMMessage(role="system", content=INTENT_SYSTEM),
             LLMMessage(role="user", content=text),
         ]
@@ -121,6 +180,29 @@ class MasterAgent:
             return self._action_project_status(project)
         if intent == "last_decision":
             return self._action_last_decision(project)
+        if intent == "morning_report":
+            return self._action_morning_report(project, user_id)
+        if intent == "crm_overview":
+            return self._action_crm_overview(project)
+        if intent == "list_notifications":
+            return self._action_list_notifications(user_id, project)
+        if intent == "content_overview":
+            return self._action_content_overview(project)
+        if intent == "generate_content":
+            topic = route.get("topic") or route.get("task_title") or msg.text
+            return self._action_generate_content(project, user_id, msg.chat_id, topic)
+        if intent == "seo_overview":
+            return self._action_seo_overview(project, user_id)
+        if intent == "business_analysis":
+            return self._action_business_analysis(project, user_id)
+        if intent == "sales_pipeline":
+            return self._action_sales_pipeline(project, user_id)
+        if intent == "financial_overview":
+            return self._action_financial_overview(project, user_id)
+        if intent == "financial_reminder":
+            return self._action_financial_reminder(project, user_id, msg.chat_id)
+        if intent == "content_suggest":
+            return self._action_content_suggest(project, user_id)
         if intent == "help":
             return self._help_text()
 
@@ -397,6 +479,407 @@ class MasterAgent:
                 lines.append(f"    ↳ دلیل: {d['reason']}")
         return "\n".join(lines)
 
+
+    # ── PM Agent: Morning report (§11) ─────────────────────────────────────
+    def _action_morning_report(self, project, user_id: int) -> str:
+        from app.agents.pm_agent import generate_morning_report, format_morning_report_telegram
+
+        pid = project["id"] if project else None
+        report = generate_morning_report(user_id=user_id, project_id=pid)
+        text = format_morning_report_telegram(report)
+        repo.record_event(
+            "morning_report_generated", user_id=user_id,
+            project_id=pid, payload={"counts": report["counts"]},
+        )
+        return text
+
+    # ── CRM (§14) ──────────────────────────────────────────────────────────
+    def _action_crm_overview(self, project) -> str:
+        from app.crm.repository import crm_stats, list_contacts, list_deals, upcoming_followups
+
+        pid = project["id"] if project else None
+        stats = crm_stats(project_id=pid)
+        contacts = list_contacts(project_id=pid, limit=8)
+        deals = list_deals(project_id=pid, limit=8)
+        followups = upcoming_followups(project_id=pid, within_days=7, limit=5)
+        overdue = upcoming_followups(project_id=pid, overdue_only=True, limit=5)
+
+        proj_label = project["name"] if project else "همه پروژه‌ها"
+        lines = [f"👥 *CRM — {proj_label}*", ""]
+
+        lines.append(f"📇 مخاطبان: {stats['contacts_total']} کل")
+        for st, cnt in stats["contacts_by_status"].items():
+            if cnt:
+                label = {"lead": "سرنخ", "prospect": "مشتری بالقوه", "customer": "مشتری", "partner": "شریک", "archived": "آرشیو"}.get(st, st)
+                lines.append(f"  • {label}: {cnt}")
+        lines.append("")
+        lines.append(f"💼 معاملات: {stats['deals_total']} کل — باز {stats['open_deals_amount']:,.0f} IRT — برنده {stats['won_amount']:,.0f} IRT")
+        for st, cnt in stats["deals_by_stage"].items():
+            if cnt:
+                label = {"lead": "سرنخ", "qualified": "واجد شرایط", "proposal": "پیشنهاد", "negotiation": "مذاکره", "won": "برنده", "lost": "باخته"}.get(st, st)
+                lines.append(f"  • {label}: {cnt}")
+
+        if overdue:
+            lines.append(f"\n⚠️ پیگیری معوق ({len(overdue)}):")
+            for f in overdue:
+                lines.append(f"  • {f['contact_name']} — {f['summary']}")
+
+        if followups:
+            lines.append(f"\n📅 پیگیری پیش رو ({len(followups)}):")
+            for f in followups:
+                lines.append(f"  • {f['contact_name']} — {f['summary']}")
+
+        if contacts:
+            lines.append(f"\n📇 آخرین مخاطبان:")
+            for c in contacts[:5]:
+                comp = f" ({c['company']})" if c['company'] else ""
+                lines.append(f"  • {c['name']}{comp} — {c['status']}")
+
+        if deals:
+            lines.append(f"\n💰 آخرین معاملات:")
+            for d in deals[:5]:
+                lines.append(f"  • {d['title']} — {d['stage']} — {float(d['amount'] or 0):,.0f} {d['currency']}")
+
+        lines.append("\n_برای افزودن مخاطب بگو: «مخاطب جدید علی با شماره ۰۹۱۲...» یا از داشبورد تب CRM._")
+        return "\n".join(lines)
+
+    # ── Notifications (§18) ────────────────────────────────────────────────
+    def _action_list_notifications(self, user_id: int, project) -> str:
+        from app.notifications.service import generate_notifications, get_notification_summary
+
+        pid = project["id"] if project else None
+        notifs = generate_notifications(user_id=user_id, project_id=pid, limit=15)
+        summary = get_notification_summary(user_id=user_id, project_id=pid)
+
+        if not notifs:
+            return "✅ هیچ اعلان فعالی نیست — همه چیز مرتب است!"
+
+        lines = [f"🔔 *اعلان‌ها — {summary['total']} مورد* (🔴 {summary['by_severity'].get('high',0)} بحرانی)", ""]
+
+        for n in notifs:
+            emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(n["severity"], "•")
+            lines.append(f"{emoji} {n['title']}")
+            if n["body"]:
+                lines.append(f"   {n['body']}")
+
+        lines.append("\n_برای دیدن جزئیات و مدیریت، داشبورد → تب اعلان‌ها را باز کن._")
+        return "\n".join(lines)
+
+    # ── Content Agent (§9) ─────────────────────────────────────────────────
+    def _action_content_overview(self, project) -> str:
+        from app.content.repository import content_stats, list_drafts
+
+        pid = project["id"] if project else None
+        stats = content_stats(project_id=pid)
+        drafts = list_drafts(project_id=pid, limit=10)
+
+        proj_label = project["name"] if project else "همه پروژه‌ها"
+        lines = [f"📝 *محتوا — {proj_label}*", ""]
+        lines.append(f"📄 کل پیش‌نویس‌ها: {stats['total']} — میانگین {stats['avg_word_count']} کلمه")
+        for st, cnt in stats["by_status"].items():
+            if cnt:
+                label = {"draft": "پیش‌نویس", "pending_approval": "منتظر تأیید", "approved": "تأییدشده", "published": "منتشرشده", "rejected": "ردشده", "archived": "آرشیو"}.get(st, st)
+                lines.append(f"  • {label}: {cnt}")
+
+        if drafts:
+            lines.append(f"\n📝 آخرین پیش‌نویس‌ها:")
+            for d in drafts[:6]:
+                lines.append(f"  • {d['title']} — {d['status']} — {d['word_count']} کلمه — {d['seo_score'] or '—'} امتیاز سئو")
+
+        lines.append("\n_برای تولید مقاله بگو: «مقاله بنویس درباره فواید گلاب برای گیاهکده» یا از داشبورد._")
+        return "\n".join(lines)
+
+    def _action_generate_content(self, project, user_id: int, chat_id: int, topic: str) -> str:
+        from app import approvals
+
+        # Clean topic from command prefix
+        clean_topic = topic or ""
+        for prefix in ["/content", "مقاله بنویس", "محتوا بنویس", "تولید محتوا", "پیش‌نویس محتوا"]:
+            if clean_topic.lower().startswith(prefix):
+                clean_topic = clean_topic[len(prefix):].strip(" :—-")
+        if not clean_topic:
+            return "موضوع مقاله را بگو. مثلاً: «مقاله بنویس درباره فواید عرق نعناع برای گیاهکده»"
+
+        # Check project from topic if mentions
+        proj_id = project["id"] if project else None
+        # Simple heuristic: if topic contains project name, resolve
+        low = clean_topic.lower()
+        if not project:
+            for slug, name in [("giahkade", "گیاهکده"), ("esqom", "امداد سرویس قم"), ("cropexport", "crop"), ("netnova", "نت نوا")]:
+                if name in low or slug in low:
+                    p = repo.get_project(slug)
+                    if p:
+                        proj_id = p["id"]
+                        break
+
+        res = approvals.request_action(
+            action_type="content.generate",
+            title=f"تولید محتوا: {clean_topic[:50]}",
+            summary=f"موضوع: {clean_topic}",
+            payload={
+                "topic": clean_topic,
+                "project_id": proj_id,
+                "created_by": user_id,
+                "target_words": 2000,
+            },
+            requested_by=user_id,
+            project_id=proj_id,
+            chat_id=chat_id,
+            agent="master",
+        )
+
+        if res.executed:
+            return f"✅ {res.result}\n\nبرای دیدن پیش‌نویس، داشبورد → تب محتوا یا دستور /content را بزن."
+        else:
+            return f"{res.message}\nموضوع: {clean_topic} — کارت تأیید در چت ارسال شد. بعد از تأیید، مقاله تولید می‌شود."
+
+    # ── SEO Agent (§8) ─────────────────────────────────────────────────────
+    def _action_seo_overview(self, project, user_id: int) -> str:
+        from app.integrations import store
+        from app.integrations.google import get_project_google_data
+
+        pid = project["id"] if project else None
+        proj_label = project["name"] if project else "همه پروژه‌ها"
+
+        # Find creds
+        gsc_creds = None
+        gsc_prop = None
+        ga4_creds = None
+        ga4_prop = None
+        for _pid in ([pid] if pid else []) + [None]:
+            try:
+                if not gsc_creds:
+                    row = store.find("google_search_console", _pid)
+                    if row:
+                        gsc_creds = store.credentials("google_search_console", _pid)
+                        gsc_prop = gsc_creds.get("property_url")
+            except Exception:
+                pass
+            try:
+                if not ga4_creds:
+                    row = store.find("google_analytics", _pid)
+                    if row:
+                        ga4_creds = store.credentials("google_analytics", _pid)
+                        ga4_prop = ga4_creds.get("property_id")
+            except Exception:
+                pass
+
+        if not (gsc_creds or ga4_creds):
+            return (
+                f"🔍 *وضعیت سئو — {proj_label}*\n\n"
+                "⚠️ اتصال گوگل تنظیم نشده. برای داده واقعی:\n"
+                "1. داشبورد → تب اتصال‌ها → Google Search Console و GA4 را وصل کن\n"
+                "2. با `python -m app.tools.google_oauth` یک Refresh Token بگیر\n"
+                "3. بعد از اتصال، دوباره /seo بزن — کلیک، ایمپرشن، CTR و جایگاه را می‌بینی.\n\n"
+                "در حال حاضر فقط تحلیل داخلی (Cannibalization، طول محتوا، متا) در دسترس است.\n"
+                "برای تحلیل پیش‌نویس: /content → انتخاب پیش‌نویس → بررسی سئو"
+            )
+
+        data = get_project_google_data(
+            gsc_creds=gsc_creds,
+            gsc_property=gsc_prop,
+            ga4_creds=ga4_creds,
+            ga4_property=ga4_prop,
+        )
+
+        lines = [f"🔍 *وضعیت سئو — {proj_label}*", ""]
+
+        if data.get("gsc"):
+            gsc = data["gsc"]
+            tot = gsc.get("totals", {})
+            lines.append(f"📊 *Search Console (۲۸ روز):*")
+            lines.append(f"  • کلیک: {tot.get('clicks',0):,.0f} | نمایش: {tot.get('impressions',0):,.0f} | CTR: {tot.get('ctr',0):.1%} | جایگاه: {tot.get('position',0):.1f}")
+            if gsc.get("top_queries"):
+                lines.append(f"\n🔑 *کوئری‌های برتر:*")
+                for q in gsc["top_queries"][:8]:
+                    keys = q.get("keys", [])
+                    lines.append(f"  • {keys[0] if keys else '—'} — {q.get('clicks',0):,.0f} کلیک، جایگاه {q.get('position',0):.1f}")
+            if gsc.get("top_pages"):
+                lines.append(f"\n📄 *صفحات برتر:*")
+                for p in gsc["top_pages"][:5]:
+                    keys = p.get("keys", [])
+                    lines.append(f"  • {keys[0][:60] if keys else '—'} — {p.get('clicks',0):,.0f} کلیک")
+
+        if data.get("ga4"):
+            ga4 = data["ga4"]
+            tot = ga4.get("totals", {})
+            lines.append(f"\n📈 *GA4 (۲۸ روز):*")
+            lines.append(f"  • سشن: {tot.get('sessions','—')} | کاربر: {tot.get('totalUsers','—')} | بازدید: {tot.get('screenPageViews','—')}")
+
+        if data.get("errors"):
+            lines.append(f"\n⚠️ خطاها: {' • '.join(data['errors'])}")
+
+        # Add SEO tips from content drafts
+        try:
+            from app.content.repository import content_stats, list_drafts
+            c_stats = content_stats(project_id=pid)
+            if c_stats["total"]:
+                lines.append(f"\n📝 *محتوا:* {c_stats['total']} پیش‌نویس، میانگین {c_stats['avg_word_count']} کلمه")
+                drafts = list_drafts(project_id=pid, limit=5)
+                low_seo = [d for d in drafts if d["seo_score"] is not None and d["seo_score"] < 70]
+                if low_seo:
+                    lines.append(f"⚠️ {len(low_seo)} پیش‌نویس امتیاز سئو پایین دارند — نیاز به بهینه‌سازی.")
+        except Exception:
+            pass
+
+        lines.append("\n_برای جزئیات کامل داشبورد را باز کن → خلاصه → کارت گوگل._")
+        return "\n".join(lines)
+
+    # ── Business Analyst (§12) ─────────────────────────────────────────────
+    def _action_business_analysis(self, project, user_id: int) -> str:
+        from app.agents.business_analyst import analyze_business, format_business_report_telegram
+
+        pid = project["id"] if project else None
+        analysis = analyze_business(project_id=pid)
+        text = format_business_report_telegram(analysis)
+        repo.record_event("business_analysis_generated", user_id=user_id, project_id=pid, payload={"health_score": analysis["health_score"]})
+        return text
+
+    # ── Sales Agent (§13) ────────────────────────────────────────────────────
+    def _action_sales_pipeline(self, project, user_id: int) -> str:
+        from app.agents.sales_agent import analyze_sales_pipeline, format_sales_report_telegram
+
+        pid = project["id"] if project else None
+        pipeline = analyze_sales_pipeline(project_id=pid)
+        text = format_sales_report_telegram(pipeline)
+        repo.record_event("sales_report_generated", user_id=user_id, project_id=pid, payload={"total_deals": pipeline["total_deals"]})
+        return text
+
+    # ── Financial — Monthly Income (redefined §15) ─────────────────────────
+    def _action_financial_overview(self, project, user_id: int) -> str:
+        from app.financial.repository import monthly_summary, project_contracts_summary, list_incomes
+
+        pid = project["id"] if project else None
+        proj_label = project["name"] if project else "همه پروژه‌ها"
+
+        summary = monthly_summary(project_id=pid)
+        contracts = project_contracts_summary()
+
+        if pid:
+            contracts = [c for c in contracts if c["id"] == pid]
+
+        lines = [f"💰 *درآمد ماهانه — {proj_label}*", ""]
+        lines.append(f"📅 ماه جاری شمسی: {summary['current_month']}")
+        lines.append(f"💵 کل وصولی: {summary['total_paid']:,.0f} IRT از {summary['total_expected']:,.0f} IRT — نرخ وصول {summary['collection_rate']}٪")
+        lines.append("")
+
+        if summary["months"]:
+            lines.append("📊 *۱۲ ماه اخیر:*")
+            for m in summary["months"][:6]:
+                status_emoji = "✅" if m["paid_percent"] >= 100 else "🟡" if m["paid_percent"] >= 50 else "🔴"
+                lines.append(f"  {status_emoji} {m['month_jalali']}: {m['paid']:,.0f} / {m['total']:,.0f} IRT ({m['paid_percent']}٪) — {m['count']} پروژه")
+            lines.append("")
+
+        if summary["overdue"]:
+            lines.append(f"⚠️ *معوق ({len(summary['overdue'])}):*")
+            for inc in summary["overdue"][:6]:
+                lines.append(f"  • {inc['project_name']} — {inc['month_jalali']} — {float(inc['amount']):,.0f} IRT")
+            lines.append("")
+
+        if summary["pending"]:
+            lines.append(f"⏳ *در انتظار پرداخت ({len(summary['pending'])}):*")
+            for inc in summary["pending"][:6]:
+                lines.append(f"  • {inc['project_name']} — {inc['month_jalali']} — {float(inc['amount']):,.0f} IRT")
+            lines.append("")
+
+        if summary["current_month_incomes"]:
+            lines.append(f"📅 *وضعیت ماه جاری ({summary['current_month']}):*")
+            for inc in summary["current_month_incomes"][:8]:
+                emoji = {"paid": "✅", "pending": "⏳", "overdue": "🔴", "cancelled": "❌"}.get(inc["status"], "•")
+                lines.append(f"  {emoji} {inc['project_name']} — {float(inc['amount']):,.0f} IRT — {inc['status']}")
+            lines.append("")
+
+        if not pid:
+            # Show contracts overview
+            lines.append("📋 *قراردادهای فعال:*")
+            for c in contracts[:8]:
+                cur_emoji = {"paid": "✅", "pending": "⏳", "overdue": "🔴", "not_created": "➕"}.get(c["current_month_status"], "•")
+                lines.append(f"  {cur_emoji} {c['name']}: میانگین {c['avg_contract']:,.0f} IRT — ماه جاری {c['current_month_status']} — {c['overdue_count']} معوق")
+
+        lines.append("\n_برای ثبت واریز بگو: «گیاهکده ۱۵ میلیون واریز کرد برای ۱۴۰۴-۰۶» یا از داشبورد._")
+        return "\n".join(lines)
+
+    # ── Financial Reminder (§15) ───────────────────────────────────────────
+    def _action_financial_reminder(self, project, user_id: int, chat_id: int) -> str:
+        from app.agents.financial_agent import send_overdue_reminders, format_overdue_summary_telegram
+
+        pid = project["id"] if project else None
+        results = send_overdue_reminders(project_id=pid, dry_run=True, max_send=10)
+        summary = format_overdue_summary_telegram(results)
+
+        if not results:
+            return summary
+
+        # Ask for approval to send
+        from app import approvals
+        # For each overdue, request approval to send reminder (will be yellow)
+        sent_requests = []
+        for r in results[:3]:  # limit to 3 for Telegram spam prevention
+            inc_uid = r["income_uid"]
+            client = r.get("client", {})
+            if not client:
+                continue
+            # Only if client has contact method
+            if not (client.get("telegram_chat_id") or client.get("email")):
+                continue
+
+            res = approvals.request_action(
+                action_type="financial.send_reminder",
+                title=f"یادآوری پرداخت به {client.get('name')} برای {r.get('project_name')}",
+                summary=f"مبلغ {float(r.get('message','')[:10] or 0):,.0f} بابت {r.get('income_uid')} — {r.get('days_overdue')} روز معوق",
+                payload={
+                    "income_uid": inc_uid,
+                    "client_telegram_chat_id": client.get("telegram_chat_id"),
+                    "client_email": client.get("email"),
+                    "message": r["message"],
+                    "project_id": r["project_id"],
+                },
+                requested_by=user_id,
+                project_id=r["project_id"],
+                chat_id=chat_id,
+                agent="financial_agent",
+            )
+            sent_requests.append(res)
+
+        if sent_requests:
+            summary += f"\n\n⏳ {len(sent_requests)} درخواست ارسال یادآوری به کارفرما ثبت شد — کارت‌های تأیید در چت ارسال شد. پس از تأیید، پیام خودکار با ذکر 'دستیار آژانس نت نوا' ارسال می‌شود."
+
+        return summary
+
+    # ── Content Suggest from GSC (§9) ────────────────────────────────────────
+    def _action_content_suggest(self, project, user_id: int) -> str:
+        from app.agents.content_agent import suggest_topics_from_gsc
+
+        pid = project["id"] if project else None
+        proj_label = project["name"] if project else "همه پروژه‌ها"
+
+        suggestions = suggest_topics_from_gsc(project_id=pid, limit=15)
+
+        if not suggestions:
+            return (
+                f"📝 *پیشنهاد موضوع محتوا — {proj_label}*\n\n"
+                "⚠️ داده Search Console موجود نیست یا اتصال تنظیم نشده.\n"
+                "برای پیشنهاد هوشمند:\n"
+                "1. GSC را در اتصال‌ها وصل کن\n"
+                "2. سپس /content suggest بزن — کوئری‌های با ایمپرشن بالا و CTR پایین را پیدا می‌کنم.\n\n"
+                "در حال حاضر بر اساس محصولات گیاهکده پیشنهاد می‌دهم:\n"
+                "• فواید عرق نعناع برای گوارش\n"
+                "• خواص روغن کنجد برای پوست\n"
+                "• تفاوت گلاب دوآتیشه و معمولی"
+            )
+
+        lines = [f"📝 *پیشنهاد موضوع محتوا از GSC — {proj_label}* ({len(suggestions)} مورد)", ""]
+        lines.append("این موضوعات بر اساس داده واقعی Search Console (ایمپرشن بالا، CTR پایین، جایگاه ۵-۲۰) پیشنهاد می‌شوند:")
+        lines.append("")
+
+        for i, s in enumerate(suggestions[:10], 1):
+            lines.append(f"{i}. *{s['topic']}*")
+            lines.append(f"   {s['reason']} — {s['impressions']:.0f} نمایش، {s['ctr']:.1%} CTR، جایگاه {s['position']:.1f}")
+            lines.append("")
+
+        lines.append("_برای تولید مقاله بگو: «مقاله بنویس درباره [موضوع]»_")
+        return "\n".join(lines)
+
     # ── Chat with full context ─────────────────────────────────────────────
     def _action_chat(self, msg: IncomingMessage, convo_id: int, project) -> str:
         projects = repo.list_projects(active_only=True)
@@ -452,7 +935,15 @@ class MasterAgent:
             "• آخرین تصمیم‌ها: «آخرین تصمیم درباره CropExport چی بود؟»\n"
             "• پرونده کامل پروژه: «پرونده گیاهکده» یا /dossier giahkade\n"
             "• صف تأیید: /approvals — اقدامات 🟡/🔴 با دکمه [✅ تأیید] [❌ لغو] در همین چت\n"
-            "• اتصال‌ها: /connections — وردپرس، کانال تلگرام، ایمیل، گوگل…\n\n"
+            "• اتصال‌ها: /connections — وردپرس، کانال تلگرام، ایمیل، گوگل…\n"
+            "• گزارش صبحگاهی: /morning — با تقویم شمسی، اولویت‌بندی هوشمند، پیگیری CRM، داده گوگل\n"
+            "• مخاطبان و معاملات: /crm — مدیریت CRM پایه\n"
+            "• اعلان‌ها: /notify — تسک‌های معوق، تأییدهای در حال انقضا، پیگیری‌های CRM\n"
+            "• محتوا: /content <موضوع> — تولید مقاله با سئو و Cannibalization چک\n"
+            "• سئو: /seo <پروژه> — وضعیت Search Console + GA4 + تحلیل محتوا\n"
+            "• بیزنس: /business — تحلیل سلامت کسب‌وکار، یافته‌ها و پیشنهاد اقدام\n"
+            "• فروش: /sales — پایپ‌لاین معاملات، راکد، بستن زودهنگام، اقدام بعدی\n"
+            "• مالی: /finance یا /income — درآمد ماهانه پروژه‌ها، واریزی‌ها، معوقات\n\n"
             "🔐 سیستم تأیید سه‌سطحی فعال است: 🟢 مستقیم اجرا می‌شود، "
             "🟡 یک تأیید و 🔴 دو تأیید از تو می‌گیرد.\n\n"
             "پروژه‌های فعلی: Net Nova، گیاهکده، E-Ferdowsi، امداد سرویس قم، CropExport، آبادگران، Sir-Siah.\n\n"

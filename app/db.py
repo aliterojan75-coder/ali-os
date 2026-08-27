@@ -252,6 +252,7 @@ CREATE TABLE IF NOT EXISTS project_people (
     name            TEXT NOT NULL,
     role            TEXT,
     contact         TEXT,
+    telegram_chat_id INTEGER,
     responsibility  TEXT,
     is_internal     INTEGER DEFAULT 1,
     notes           TEXT,
@@ -277,6 +278,180 @@ CREATE TABLE IF NOT EXISTS integrations (
     UNIQUE (project_id, service)
 );
 
+-- ─── Phase 2: CRM (§14) + Notifications (§18) + PM Agent (§11) ───────────────
+CREATE TABLE IF NOT EXISTS crm_contacts (
+    id              INTEGER PRIMARY KEY,
+    contact_uid     TEXT UNIQUE NOT NULL,
+    project_id      INTEGER REFERENCES projects(id),
+    name            TEXT NOT NULL,
+    company         TEXT,
+    role            TEXT,
+    phone           TEXT,
+    email           TEXT,
+    telegram        TEXT,
+    telegram_chat_id INTEGER,
+    status          TEXT DEFAULT 'lead',  -- lead | prospect | customer | partner | archived
+    tags            TEXT DEFAULT '[]',
+    notes           TEXT,
+    source          TEXT,
+    owner           TEXT DEFAULT 'Ali',
+    created_by      INTEGER REFERENCES users(id),
+    last_contact_at REAL,
+    created_at      REAL NOT NULL,
+    updated_at      REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS crm_interactions (
+    id                  INTEGER PRIMARY KEY,
+    interaction_uid     TEXT UNIQUE NOT NULL,
+    contact_id          INTEGER NOT NULL REFERENCES crm_contacts(id) ON DELETE CASCADE,
+    project_id          INTEGER REFERENCES projects(id),
+    type                TEXT NOT NULL DEFAULT 'note',  -- call | meeting | message | note | email
+    summary             TEXT NOT NULL,
+    content             TEXT,
+    outcome             TEXT,
+    next_action         TEXT,
+    next_follow_up_at   REAL,
+    created_by          INTEGER REFERENCES users(id),
+    created_at          REAL NOT NULL,
+    updated_at          REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS crm_deals (
+    id                  INTEGER PRIMARY KEY,
+    deal_uid            TEXT UNIQUE NOT NULL,
+    contact_id          INTEGER REFERENCES crm_contacts(id) ON DELETE SET NULL,
+    project_id          INTEGER REFERENCES projects(id),
+    title               TEXT NOT NULL,
+    amount              REAL DEFAULT 0,
+    currency            TEXT DEFAULT 'IRT',
+    stage               TEXT DEFAULT 'lead',  -- lead | qualified | proposal | negotiation | won | lost
+    probability         INTEGER DEFAULT 50,
+    expected_close_at   REAL,
+    notes               TEXT,
+    created_by          INTEGER REFERENCES users(id),
+    created_at          REAL NOT NULL,
+    updated_at          REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS notifications (
+    id                  INTEGER PRIMARY KEY,
+    notification_uid    TEXT UNIQUE NOT NULL,
+    user_id             INTEGER REFERENCES users(id),
+    type                TEXT NOT NULL,  -- overdue_task | approval_expiring | crm_followup | hot_task | deal_closing | etc
+    title               TEXT NOT NULL,
+    body                TEXT,
+    related_type        TEXT,
+    related_id          TEXT,
+    is_read             INTEGER DEFAULT 0,
+    created_at          REAL NOT NULL
+);
+
+-- ─── Phase 3: Content Agent (§9) + SEO Agent (§8) ───────────────────────────
+CREATE TABLE IF NOT EXISTS content_drafts (
+    id                  INTEGER PRIMARY KEY,
+    draft_uid           TEXT UNIQUE NOT NULL,
+    project_id          INTEGER REFERENCES projects(id),
+    topic               TEXT NOT NULL,
+    title               TEXT NOT NULL,
+    slug_en             TEXT,
+    outline_json        TEXT DEFAULT '[]',
+    content             TEXT,
+    excerpt             TEXT,
+    faq_json            TEXT DEFAULT '[]',
+    image_prompt        TEXT,
+    cta                 TEXT,
+    meta_title          TEXT,
+    meta_description    TEXT,
+    focus_keyword       TEXT,
+    canonical_url       TEXT,
+    word_count          INTEGER DEFAULT 0,
+    status              TEXT DEFAULT 'draft',  -- draft | pending_approval | approved | published | rejected | archived
+    cannibalization_json TEXT DEFAULT '[]',
+    seo_score           INTEGER,
+    seo_notes           TEXT,
+    wordpress_post_id   INTEGER,
+    wordpress_url       TEXT,
+    created_by          INTEGER REFERENCES users(id),
+    created_at          REAL NOT NULL,
+    updated_at          REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS seo_audits (
+    id                  INTEGER PRIMARY KEY,
+    audit_uid           TEXT UNIQUE NOT NULL,
+    project_id          INTEGER REFERENCES projects(id),
+    url                 TEXT,
+    post_id             INTEGER,
+    title               TEXT,
+    focus_keyword       TEXT,
+    score               INTEGER,
+    issues_json         TEXT DEFAULT '[]',
+    suggestions_json    TEXT DEFAULT '[]',
+    content_length      INTEGER,
+    has_meta_title      INTEGER DEFAULT 0,
+    has_meta_desc       INTEGER DEFAULT 0,
+    has_canonical       INTEGER DEFAULT 0,
+    has_focus_keyword   INTEGER DEFAULT 0,
+    cannibalization_risk INTEGER DEFAULT 0,
+    created_at          REAL NOT NULL
+);
+
+-- ─── Financial: Monthly recurring income tracking (redefined §15) ──────────
+-- Each project has a monthly contract; track paid/unpaid per Jalali month
+CREATE TABLE IF NOT EXISTS project_incomes (
+    id                  INTEGER PRIMARY KEY,
+    income_uid          TEXT UNIQUE NOT NULL,
+    project_id          INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    amount              REAL NOT NULL DEFAULT 0,
+    currency            TEXT DEFAULT 'IRT',
+    month_jalali        TEXT NOT NULL,  -- e.g., '1404-06' (YYYY-MM)
+    month_gregorian     TEXT,           -- e.g., '2025-08'
+    due_at              REAL,           -- when payment is due (timestamp)
+    paid_at             REAL,           -- when actually paid
+    status              TEXT DEFAULT 'pending',  -- pending | paid | overdue | cancelled | partial
+    payment_method      TEXT,           -- e.g., کارت به کارت، واریز بانکی
+    transaction_ref     TEXT,
+    notes               TEXT,
+    created_by          INTEGER REFERENCES users(id),
+    created_at          REAL NOT NULL,
+    updated_at          REAL NOT NULL,
+    UNIQUE(project_id, month_jalali)
+);
+
+CREATE TABLE IF NOT EXISTS gsc_daily_stats (
+    id                  INTEGER PRIMARY KEY,
+    project_id          INTEGER REFERENCES projects(id),
+    property_url        TEXT NOT NULL,
+    date                TEXT NOT NULL,  -- YYYY-MM-DD Gregorian
+    date_jalali         TEXT,           -- YYYY-MM-DD Jalali
+    clicks              INTEGER DEFAULT 0,
+    impressions         INTEGER DEFAULT 0,
+    ctr                 REAL DEFAULT 0,
+    position            REAL DEFAULT 0,
+    queries_json        TEXT DEFAULT '[]',
+    pages_json          TEXT DEFAULT '[]',
+    created_at          REAL NOT NULL,
+    UNIQUE(property_url, date)
+);
+
+CREATE TABLE IF NOT EXISTS ga4_daily_stats (
+    id                  INTEGER PRIMARY KEY,
+    project_id          INTEGER REFERENCES projects(id),
+    property_id         TEXT NOT NULL,
+    date                TEXT NOT NULL,
+    date_jalali         TEXT,
+    sessions            INTEGER DEFAULT 0,
+    users               INTEGER DEFAULT 0,
+    pageviews           INTEGER DEFAULT 0,
+    conversions         INTEGER DEFAULT 0,
+    bounce_rate         REAL DEFAULT 0,
+    channels_json       TEXT DEFAULT '[]',
+    pages_json          TEXT DEFAULT '[]',
+    created_at          REAL NOT NULL,
+    UNIQUE(property_id, date)
+);
+
 CREATE INDEX IF NOT EXISTS idx_integrations_project ON integrations(project_id);
 CREATE INDEX IF NOT EXISTS idx_integrations_service ON integrations(service);
 CREATE INDEX IF NOT EXISTS idx_pending_status ON pending_actions(status);
@@ -289,6 +464,26 @@ CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project_id);
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type);
+CREATE INDEX IF NOT EXISTS idx_crm_contacts_project ON crm_contacts(project_id);
+CREATE INDEX IF NOT EXISTS idx_crm_contacts_status ON crm_contacts(status);
+CREATE INDEX IF NOT EXISTS idx_crm_interactions_contact ON crm_interactions(contact_id);
+CREATE INDEX IF NOT EXISTS idx_crm_interactions_followup ON crm_interactions(next_follow_up_at);
+CREATE INDEX IF NOT EXISTS idx_crm_deals_project ON crm_deals(project_id);
+CREATE INDEX IF NOT EXISTS idx_crm_deals_stage ON crm_deals(stage);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(is_read);
+CREATE INDEX IF NOT EXISTS idx_notifications_type ON notifications(type);
+CREATE INDEX IF NOT EXISTS idx_content_drafts_project ON content_drafts(project_id);
+CREATE INDEX IF NOT EXISTS idx_content_drafts_status ON content_drafts(status);
+CREATE INDEX IF NOT EXISTS idx_content_drafts_uid ON content_drafts(draft_uid);
+CREATE INDEX IF NOT EXISTS idx_seo_audits_project ON seo_audits(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_incomes_project ON project_incomes(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_incomes_month ON project_incomes(month_jalali);
+CREATE INDEX IF NOT EXISTS idx_project_incomes_status ON project_incomes(status);
+CREATE INDEX IF NOT EXISTS idx_gsc_daily_property ON gsc_daily_stats(property_url);
+CREATE INDEX IF NOT EXISTS idx_gsc_daily_date ON gsc_daily_stats(date);
+CREATE INDEX IF NOT EXISTS idx_ga4_daily_property ON ga4_daily_stats(property_id);
+CREATE INDEX IF NOT EXISTS idx_ga4_daily_date ON ga4_daily_stats(date);
 """
 
 

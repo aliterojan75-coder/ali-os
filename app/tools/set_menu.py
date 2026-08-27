@@ -28,13 +28,22 @@ def set_menu_button() -> bool:
     return True
 
 
-# Slash commands shown in the Telegram "/" menu (Phase 2).
+# Slash commands shown in the Telegram "/" menu (Phase 2 + Phase 3 start).
 BOT_COMMANDS = [
     {"command": "start", "description": "معرفی و راهنما"},
     {"command": "tasks", "description": "Taskهای باز"},
     {"command": "approvals", "description": "صف تأیید (اقدامات در انتظار)"},
     {"command": "dossier", "description": "پرونده کامل پروژه — /dossier giahkade"},
     {"command": "connections", "description": "اتصال‌ها (وردپرس، گوگل، تلگرام…)"},
+    {"command": "morning", "description": "گزارش صبحگاهی با تقویم شمسی"},
+    {"command": "crm", "description": "مخاطبان و معاملات CRM"},
+    {"command": "notify", "description": "اعلان‌ها — تسک معوق، تأیید، CRM"},
+    {"command": "content", "description": "تولید محتوا — /content موضوع مقاله"},
+    {"command": "seo", "description": "وضعیت سئو — Search Console + GA4"},
+    {"command": "business", "description": "تحلیل کسب‌وکار — سلامت و پیشنهاد"},
+    {"command": "sales", "description": "پایپ‌لاین فروش — معاملات و پیگیری"},
+    {"command": "finance", "description": "درآمد ماهانه — واریزی پروژه‌ها"},
+    {"command": "income", "description": "ثبت واریز — /income پروژه مبلغ ماه"},
 ]
 
 
