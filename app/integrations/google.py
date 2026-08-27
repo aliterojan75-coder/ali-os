@@ -290,6 +290,130 @@ def ga4_realtime_report(
     return resp.json()
 
 
+def gsc_daily_trend(
+    creds: dict,
+    property_url: str,
+    *,
+    days: int = 28,
+) -> dict:
+    """Fetch daily clicks/impressions for chart — last N days."""
+    from datetime import datetime, timedelta, timezone
+    end_dt = datetime.now(timezone.utc) - timedelta(days=3)
+    start_dt = end_dt - timedelta(days=days)
+
+    try:
+        data = gsc_query(
+            creds,
+            property_url,
+            start_date=start_dt.strftime("%Y-%m-%d"),
+            end_date=end_dt.strftime("%Y-%m-%d"),
+            dimensions=["date"],
+            row_limit=1000,
+        )
+        rows = data.get("rows", [])
+        rows.sort(key=lambda r: r.get("keys", [""])[0])
+        return {
+            "dates": [r["keys"][0] for r in rows if r.get("keys")],
+            "clicks": [int(r.get("clicks", 0)) for r in rows],
+            "impressions": [int(r.get("impressions", 0)) for r in rows],
+            "ctr": [float(r.get("ctr", 0)) for r in rows],
+            "position": [float(r.get("position", 0)) for r in rows],
+        }
+    except Exception as exc:
+        log.warning("gsc.daily_trend_failed", extra={"extra_fields": {"error": str(exc)}})
+        return {"dates": [], "clicks": [], "impressions": [], "ctr": [], "position": []}
+
+
+def gsc_device_breakdown(
+    creds: dict,
+    property_url: str,
+    *,
+    days: int = 28,
+) -> list[dict]:
+    try:
+        data = gsc_query(
+            creds,
+            property_url,
+            dimensions=["device"],
+            row_limit=10,
+        )
+        return data.get("rows", [])
+    except Exception as exc:
+        log.warning("gsc.device_failed", extra={"extra_fields": {"error": str(exc)}})
+        return []
+
+
+def gsc_country_breakdown(
+    creds: dict,
+    property_url: str,
+    *,
+    days: int = 28,
+) -> list[dict]:
+    try:
+        data = gsc_query(
+            creds,
+            property_url,
+            dimensions=["country"],
+            row_limit=20,
+        )
+        return data.get("rows", [])
+    except Exception as exc:
+        log.warning("gsc.country_failed", extra={"extra_fields": {"error": str(exc)}})
+        return []
+
+
+def ga4_daily_trend(
+    creds: dict,
+    property_id: str,
+    *,
+    days: int = 28,
+) -> dict:
+    from datetime import datetime, timedelta, timezone
+    end_dt = datetime.now(timezone.utc)
+    start_dt = end_dt - timedelta(days=days)
+
+    try:
+        report = ga4_run_report(
+            creds,
+            property_id,
+            metrics=["sessions", "totalUsers", "screenPageViews"],
+            dimensions=["date"],
+            start_date=start_dt.strftime("%Y-%m-%d"),
+            end_date=end_dt.strftime("%Y-%m-%d"),
+            limit=1000,
+        )
+        rows = report.get("rows", [])
+        # GA4 date format is YYYYMMDD, convert to YYYY-MM-DD
+        dates = []
+        sessions = []
+        users = []
+        pageviews = []
+        for r in rows:
+            dim_vals = r.get("dimensionValues", [])
+            met_vals = r.get("metricValues", [])
+            if not dim_vals or not met_vals:
+                continue
+            date_raw = dim_vals[0].get("value", "")
+            # Convert YYYYMMDD to YYYY-MM-DD
+            if len(date_raw) == 8:
+                date_fmt = f"{date_raw[:4]}-{date_raw[4:6]}-{date_raw[6:]}"
+            else:
+                date_fmt = date_raw
+            dates.append(date_fmt)
+            # metrics order: sessions, totalUsers, screenPageViews
+            try:
+                sessions.append(int(met_vals[0].get("value", "0")))
+                users.append(int(met_vals[1].get("value", "0")) if len(met_vals) > 1 else 0)
+                pageviews.append(int(met_vals[2].get("value", "0")) if len(met_vals) > 2 else 0)
+            except Exception:
+                pass
+
+        return {"dates": dates, "sessions": sessions, "users": users, "pageviews": pageviews}
+    except Exception as exc:
+        log.warning("ga4.daily_trend_failed", extra={"extra_fields": {"error": str(exc)}})
+        return {"dates": [], "sessions": [], "users": [], "pageviews": []}
+
+
 # ── Combined dashboard data ──────────────────────────────────────────────────
 
 def get_project_google_data(
@@ -308,9 +432,12 @@ def get_project_google_data(
 
     if gsc_creds and gsc_property:
         try:
-            # Last 28 days, top queries and pages
+            # Last 28 days, top queries and pages + daily trend + device breakdown
             queries = gsc_top_queries(gsc_creds, gsc_property, limit=10)
             pages = gsc_top_pages(gsc_creds, gsc_property, limit=10)
+            daily = gsc_daily_trend(gsc_creds, gsc_property, days=28)
+            devices = gsc_device_breakdown(gsc_creds, gsc_property, days=28)
+            countries = gsc_country_breakdown(gsc_creds, gsc_property, days=28)
             # Overall stats
             overall = gsc_query(gsc_creds, gsc_property, dimensions=[], row_limit=1)
             rows = overall.get("rows", [])
@@ -321,6 +448,9 @@ def get_project_google_data(
                 "totals": totals,
                 "top_queries": queries,
                 "top_pages": pages,
+                "daily": daily,
+                "devices": devices,
+                "countries": countries,
                 "fetched_at": time.time(),
             }
         except Exception as exc:
@@ -336,14 +466,12 @@ def get_project_google_data(
                 dimensions=["sessionDefaultChannelGroup"],
                 limit=10,
             )
+            daily = ga4_daily_trend(ga4_creds, ga4_property, days=28)
             # Parse totals
             totals = {}
             try:
-                # GA4 returns metricHeaders and rows, plus totals
-                # For simplicity, sum first rows
                 totals_row = report.get("totals", [{}])[0] if report.get("totals") else {}
                 if totals_row.get("metricValues"):
-                    # Map to metrics
                     metrics_list = ["sessions", "totalUsers", "screenPageViews", "conversions", "bounceRate"]
                     for i, mv in enumerate(totals_row["metricValues"]):
                         if i < len(metrics_list):
@@ -355,6 +483,7 @@ def get_project_google_data(
                 "property": ga4_property,
                 "totals": totals,
                 "rows": report.get("rows", [])[:10],
+                "daily": daily,
                 "fetched_at": time.time(),
             }
         except Exception as exc:

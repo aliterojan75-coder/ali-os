@@ -1160,6 +1160,43 @@ def gsc_queries_api():
         return jsonify({"ok": False, "error": str(exc)}), 500
 
 
+@api.post("/google/sync")
+def google_sync_api():
+    """Sync GSC daily data to local storage for charts — no heavy resource usage."""
+    from app.integrations import store
+    from app.integrations.gsc_storage import sync_gsc_to_storage
+
+    project_slug = request.args.get("project") or (request.get_json(silent=True) or {}).get("project_slug")
+    project_id = None
+    if project_slug:
+        p = repo.get_project(project_slug)
+        project_id = p["id"] if p else None
+
+    # Find GSC creds
+    creds = None
+    prop = None
+    for pid in ([project_id] if project_id else []) + [None]:
+        try:
+            row = store.find("google_search_console", pid)
+            if row:
+                creds = store.credentials("google_search_console", pid)
+                prop = creds.get("property_url")
+                if not project_id:
+                    project_id = pid
+                break
+        except Exception:
+            pass
+
+    if not creds or not prop:
+        return jsonify({"ok": False, "error": "GSC not configured"}), 404
+
+    try:
+        saved = sync_gsc_to_storage(creds=creds, property_url=prop, project_id=project_id, days=28)
+        return jsonify({"ok": True, "saved": saved, "property": prop})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
 @api.get("/google/ga4/report")
 def ga4_report_api():
     from app.integrations import store
@@ -1256,6 +1293,174 @@ def sales_followup_message_api():
         return jsonify({"ok": True, "message": msg})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+# ── Financial — Monthly Income Tracking (redefined §15) ──────────────────────
+
+@api.get("/financial/incomes")
+@api.get("/incomes")
+def financial_list_incomes():
+    from app.financial.repository import list_incomes
+
+    project_slug = request.args.get("project")
+    project_id = None
+    if project_slug:
+        p = repo.get_project(project_slug)
+        project_id = p["id"] if p else None
+    status = request.args.get("status")
+    month = request.args.get("month") or request.args.get("month_jalali")
+    limit = min(int(request.args.get("limit", 50)), 200)
+    rows = list_incomes(project_id=project_id, status=status, month_jalali=month, limit=limit)
+    return jsonify({"ok": True, "incomes": [dict(r) for r in rows]})
+
+
+@api.post("/financial/incomes")
+@api.post("/incomes")
+def financial_create_income():
+    from app import approvals
+
+    body = request.get_json(silent=True) or {}
+    project_slug = body.get("project_slug")
+    project_id = body.get("project_id")
+
+    if project_slug and not project_id:
+        p = repo.get_project(project_slug)
+        project_id = p["id"] if p else None
+
+    if not project_id:
+        return jsonify({"ok": False, "error": "project_id or project_slug required"}), 400
+
+    amount = body.get("amount")
+    if amount is None:
+        return jsonify({"ok": False, "error": "amount is required"}), 400
+
+    telegram_id = (g.telegram_user or {}).get("id")
+    user = repo.get_user(telegram_id) if telegram_id else None
+
+    res = approvals.request_action(
+        action_type="income.create",
+        title=f"درآمد ماهانه: {project_slug or project_id} — {body.get('month_jalali') or 'ماه جاری'}",
+        payload={
+            "project_id": int(project_id),
+            "amount": float(amount),
+            "month_jalali": body.get("month_jalali"),
+            "currency": body.get("currency", "IRT"),
+            "due_at": body.get("due_at"),
+            "status": body.get("status", "pending"),
+            "payment_method": body.get("payment_method"),
+            "notes": body.get("notes"),
+            "created_by": user["id"] if user else None,
+        },
+        requested_by=user["id"] if user else None,
+        project_id=int(project_id),
+        agent="miniapp",
+    )
+
+    if res.executed:
+        from app.financial.repository import list_incomes
+        rows = list_incomes(project_id=int(project_id), limit=1)
+        return jsonify({"ok": True, "executed": True, "income": dict(rows[0]) if rows else None, "result": res.result})
+    else:
+        return jsonify({"ok": True, "executed": False, "action_uid": res.action_uid, "message": res.message})
+
+
+@api.post("/financial/incomes/<income_uid>/paid")
+def financial_mark_paid(income_uid: str):
+    from app import approvals
+
+    body = request.get_json(silent=True) or {}
+    telegram_id = (g.telegram_user or {}).get("id")
+    user = repo.get_user(telegram_id) if telegram_id else None
+
+    res = approvals.request_action(
+        action_type="income.mark_paid",
+        title=f"ثبت پرداخت: {income_uid}",
+        payload={
+            "income_uid": income_uid,
+            "paid_at": body.get("paid_at"),
+            "payment_method": body.get("payment_method"),
+            "transaction_ref": body.get("transaction_ref"),
+        },
+        requested_by=user["id"] if user else None,
+        agent="miniapp",
+    )
+
+    if res.executed:
+        from app.financial.repository import get_income
+        row = get_income(income_uid)
+        return jsonify({"ok": True, "executed": True, "income": dict(row) if row else None})
+    else:
+        return jsonify({"ok": True, "executed": False, "action_uid": res.action_uid})
+
+
+@api.post("/financial/incomes/<income_uid>")
+def financial_update_income(income_uid: str):
+    from app import approvals
+
+    body = request.get_json(silent=True) or {}
+    if not body:
+        return jsonify({"ok": False, "error": "no fields"}), 400
+
+    telegram_id = (g.telegram_user or {}).get("id")
+    user = repo.get_user(telegram_id) if telegram_id else None
+
+    payload = {"income_uid": income_uid}
+    for k in ("amount", "currency", "month_jalali", "due_at", "status", "payment_method", "transaction_ref", "notes", "project_id"):
+        if k in body:
+            payload[k] = body[k]
+
+    res = approvals.request_action(
+        action_type="income.update",
+        title=f"ویرایش درآمد: {income_uid}",
+        payload=payload,
+        requested_by=user["id"] if user else None,
+        agent="miniapp",
+    )
+
+    if res.executed:
+        from app.financial.repository import get_income
+        row = get_income(income_uid)
+        return jsonify({"ok": True, "executed": True, "income": dict(row) if row else None})
+    else:
+        return jsonify({"ok": True, "executed": False, "action_uid": res.action_uid})
+
+
+@api.delete("/financial/incomes/<income_uid>")
+def financial_delete_income(income_uid: str):
+    from app import approvals
+
+    telegram_id = (g.telegram_user or {}).get("id")
+    user = repo.get_user(telegram_id) if telegram_id else None
+
+    res = approvals.request_action(
+        action_type="income.delete",
+        title=f"حذف درآمد: {income_uid}",
+        payload={"income_uid": income_uid},
+        requested_by=user["id"] if user else None,
+        agent="miniapp",
+    )
+
+    if res.executed:
+        return jsonify({"ok": True, "executed": True})
+    else:
+        return jsonify({"ok": True, "executed": False, "action_uid": res.action_uid})
+
+
+@api.get("/financial/summary")
+@api.get("/financial/monthly")
+def financial_summary_api():
+    from app.financial.repository import monthly_summary, project_contracts_summary
+
+    project_slug = request.args.get("project")
+    project_id = None
+    if project_slug:
+        p = repo.get_project(project_slug)
+        project_id = p["id"] if p else None
+
+    summary = monthly_summary(project_id=project_id)
+    contracts = project_contracts_summary()
+
+    return jsonify({"ok": True, "summary": summary, "contracts": contracts})
 
 
 @api.get("/health")

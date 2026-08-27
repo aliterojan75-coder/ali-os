@@ -500,3 +500,77 @@ def _seo_audit(payload: dict, ctx: dict) -> str:
     result = audit_content(uid)
     return f"سئو امتیاز {result['score']} — {len(result['issues'])} مشکل"
 
+
+
+# ── Financial — Monthly Income Tracking (redefined §15) ───────────────────────
+
+@executor("income.create")
+@executor("financial.create_income")
+def _income_create(payload: dict, ctx: dict) -> str:
+    from app.financial.repository import create_income
+    project_id = payload.get("project_id") or ctx.get("project_id")
+    if not project_id:
+        raise ValueError("project_id لازم است")
+    amount = payload.get("amount")
+    if amount is None:
+        raise ValueError("amount لازم است")
+    income = create_income(
+        project_id=int(project_id),
+        amount=float(amount),
+        month_jalali=payload.get("month_jalali"),
+        currency=payload.get("currency", "IRT"),
+        due_at=payload.get("due_at"),
+        status=payload.get("status", "pending"),
+        payment_method=payload.get("payment_method"),
+        notes=payload.get("notes"),
+        created_by=payload.get("created_by") or ctx.get("requested_by"),
+    )
+    return f"درآمد ماهانه ثبت شد: {income['income_uid']} — {income['month_jalali']} — {float(income['amount']):,.0f} {income['currency']}"
+
+
+@executor("income.update")
+@executor("financial.update_income")
+def _income_update(payload: dict, ctx: dict) -> str:
+    from app.financial.repository import update_income
+    uid = payload.get("income_uid")
+    if not uid:
+        raise ValueError("income_uid لازم است")
+    fields = {k: v for k, v in payload.items() if k != "income_uid"}
+    if not fields:
+        raise ValueError("هیچ فیلدی داده نشد")
+    row = update_income(uid, **fields)
+    if not row:
+        raise ValueError(f"رکورد یافت نشد: {uid}")
+    return f"درآمد {uid} به‌روزرسانی شد"
+
+
+@executor("income.mark_paid")
+@executor("financial.mark_paid")
+def _income_mark_paid(payload: dict, ctx: dict) -> str:
+    from app.financial.repository import mark_paid
+    uid = payload.get("income_uid")
+    if not uid:
+        raise ValueError("income_uid لازم است")
+    row = mark_paid(
+        uid,
+        paid_at=payload.get("paid_at"),
+        payment_method=payload.get("payment_method"),
+        transaction_ref=payload.get("transaction_ref"),
+    )
+    if not row:
+        raise ValueError(f"رکورد یافت نشد: {uid}")
+    return f"پرداخت ثبت شد: {uid} — {float(row['amount']):,.0f} {row['currency']} در {row['month_jalali']}"
+
+
+@executor("income.delete")
+@executor("financial.delete_income")
+def _income_delete(payload: dict, ctx: dict) -> str:
+    from app.financial.repository import delete_income
+    uid = payload.get("income_uid")
+    if not uid:
+        raise ValueError("income_uid لازم است")
+    ok = delete_income(uid)
+    if not ok:
+        raise ValueError(f"رکورد یافت نشد: {uid}")
+    return f"درآمد {uid} حذف شد"
+

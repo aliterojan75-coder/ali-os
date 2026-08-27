@@ -395,6 +395,61 @@ CREATE TABLE IF NOT EXISTS seo_audits (
     created_at          REAL NOT NULL
 );
 
+-- ─── Financial: Monthly recurring income tracking (redefined §15) ──────────
+-- Each project has a monthly contract; track paid/unpaid per Jalali month
+CREATE TABLE IF NOT EXISTS project_incomes (
+    id                  INTEGER PRIMARY KEY,
+    income_uid          TEXT UNIQUE NOT NULL,
+    project_id          INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    amount              REAL NOT NULL DEFAULT 0,
+    currency            TEXT DEFAULT 'IRT',
+    month_jalali        TEXT NOT NULL,  -- e.g., '1404-06' (YYYY-MM)
+    month_gregorian     TEXT,           -- e.g., '2025-08'
+    due_at              REAL,           -- when payment is due (timestamp)
+    paid_at             REAL,           -- when actually paid
+    status              TEXT DEFAULT 'pending',  -- pending | paid | overdue | cancelled | partial
+    payment_method      TEXT,           -- e.g., کارت به کارت، واریز بانکی
+    transaction_ref     TEXT,
+    notes               TEXT,
+    created_by          INTEGER REFERENCES users(id),
+    created_at          REAL NOT NULL,
+    updated_at          REAL NOT NULL,
+    UNIQUE(project_id, month_jalali)
+);
+
+CREATE TABLE IF NOT EXISTS gsc_daily_stats (
+    id                  INTEGER PRIMARY KEY,
+    project_id          INTEGER REFERENCES projects(id),
+    property_url        TEXT NOT NULL,
+    date                TEXT NOT NULL,  -- YYYY-MM-DD Gregorian
+    date_jalali         TEXT,           -- YYYY-MM-DD Jalali
+    clicks              INTEGER DEFAULT 0,
+    impressions         INTEGER DEFAULT 0,
+    ctr                 REAL DEFAULT 0,
+    position            REAL DEFAULT 0,
+    queries_json        TEXT DEFAULT '[]',
+    pages_json          TEXT DEFAULT '[]',
+    created_at          REAL NOT NULL,
+    UNIQUE(property_url, date)
+);
+
+CREATE TABLE IF NOT EXISTS ga4_daily_stats (
+    id                  INTEGER PRIMARY KEY,
+    project_id          INTEGER REFERENCES projects(id),
+    property_id         TEXT NOT NULL,
+    date                TEXT NOT NULL,
+    date_jalali         TEXT,
+    sessions            INTEGER DEFAULT 0,
+    users               INTEGER DEFAULT 0,
+    pageviews           INTEGER DEFAULT 0,
+    conversions         INTEGER DEFAULT 0,
+    bounce_rate         REAL DEFAULT 0,
+    channels_json       TEXT DEFAULT '[]',
+    pages_json          TEXT DEFAULT '[]',
+    created_at          REAL NOT NULL,
+    UNIQUE(property_id, date)
+);
+
 CREATE INDEX IF NOT EXISTS idx_integrations_project ON integrations(project_id);
 CREATE INDEX IF NOT EXISTS idx_integrations_service ON integrations(service);
 CREATE INDEX IF NOT EXISTS idx_pending_status ON pending_actions(status);
@@ -420,6 +475,13 @@ CREATE INDEX IF NOT EXISTS idx_content_drafts_project ON content_drafts(project_
 CREATE INDEX IF NOT EXISTS idx_content_drafts_status ON content_drafts(status);
 CREATE INDEX IF NOT EXISTS idx_content_drafts_uid ON content_drafts(draft_uid);
 CREATE INDEX IF NOT EXISTS idx_seo_audits_project ON seo_audits(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_incomes_project ON project_incomes(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_incomes_month ON project_incomes(month_jalali);
+CREATE INDEX IF NOT EXISTS idx_project_incomes_status ON project_incomes(status);
+CREATE INDEX IF NOT EXISTS idx_gsc_daily_property ON gsc_daily_stats(property_url);
+CREATE INDEX IF NOT EXISTS idx_gsc_daily_date ON gsc_daily_stats(date);
+CREATE INDEX IF NOT EXISTS idx_ga4_daily_property ON ga4_daily_stats(property_id);
+CREATE INDEX IF NOT EXISTS idx_ga4_daily_date ON ga4_daily_stats(date);
 """
 
 

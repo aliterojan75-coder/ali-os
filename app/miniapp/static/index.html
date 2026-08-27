@@ -160,7 +160,7 @@
     background:rgba(10,14,24,.82);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
     border-top:1px solid var(--line);
     padding:7px 8px calc(7px + env(safe-area-inset-bottom));
-    display:grid;grid-template-columns:repeat(9,1fr);gap:2px;overflow-x:auto}
+    display:grid;grid-template-columns:repeat(10,1fr);gap:2px;overflow-x:auto}
   nav.tabs button{background:transparent;border:0;color:var(--muted-2);position:relative;
     font-family:inherit;font-size:9.5px;font-weight:700;padding:7px 2px;border-radius:14px;
     display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;
@@ -328,10 +328,12 @@
     <div class="card" id="googleCard">
       <h2><span class="ico">🔍</span> داده گوگل (GSC + GA4) <span class="right" id="googleStatus">در حال بررسی…</span></h2>
       <div id="googleSummary"></div>
+      <div class="chart-wrap" id="googleDailyChart" style="margin:10px 0"></div>
       <div class="list" id="googleTopQueries"></div>
       <div style="display:flex;gap:8px;margin-top:10px">
         <button class="btn sm ghost" style="flex:1" onclick="loadGoogleData()">🔄 بروزرسانی گوگل</button>
         <button class="btn sm ghost" style="flex:1" onclick="document.querySelector('nav.tabs button[data-v=conn]').click()">🔌 تنظیم اتصال</button>
+        <button class="btn sm ghost" style="flex:1" onclick="syncGoogleToStorage()">💾 ذخیره تاریخچه</button>
       </div>
     </div>
 
@@ -472,6 +474,34 @@
       </div>
     </div>
   </section>
+
+
+  <!-- ═══ FINANCIAL (Monthly Income) ═══ -->
+  <section class="view" id="v-financial">
+    <div class="card">
+      <h2><span class="ico">💰</span> درآمد ماهانه پروژه‌ها <span class="right" id="financialMonth"></span></h2>
+      <div class="stats" id="financialStats"></div>
+      <div class="sep"></div>
+      <div id="financialSummary"></div>
+      <div class="sep"></div>
+      <div class="seg" id="financialSeg">
+        <button class="on" data-f="current">ماه جاری</button>
+        <button data-f="overdue">معوق</button>
+        <button data-f="pending">در انتظار</button>
+        <button data-f="all">همه</button>
+      </div>
+      <div class="list" id="financialList"></div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn sm" style="flex:1" onclick="openIncomeSheet()">➕ ثبت واریز</button>
+        <button class="btn sm ghost" style="flex:1" onclick="loadFinancial()">🔄 بروزرسانی</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2><span class="ico">📋</span> قراردادهای فعال</h2>
+      <div class="list" id="contractsList"></div>
+    </div>
+  </section>
+
 
   <!-- ═══ NOTIFICATIONS ═══ -->
   <section class="view" id="v-notifications">
@@ -689,6 +719,30 @@
   </div>
 </div>
 
+<!-- Income Sheet -->
+<div class="sheet-back" id="incomeBack">
+  <div class="sheet">
+    <div class="sheet-grip"></div>
+    <div class="sheet-h">
+      <strong>💰 ثبت واریز ماهانه</strong>
+      <button class="x" id="incomeClose">✕</button>
+    </div>
+    <div id="incomeBody">
+      <div class="field"><label>پروژه *</label><select id="inc-project"><option value="">انتخاب پروژه</option></select></div>
+      <div class="grid2">
+        <div class="field"><label>مبلغ (تومان) *</label><input id="inc-amount" type="number" placeholder="15000000" /></div>
+        <div class="field"><label>ماه شمسی (YYYY-MM) *</label><input id="inc-month" placeholder="1404-06" /></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>وضعیت</label><select id="inc-status"><option value="pending">در انتظار</option><option value="paid">پرداخت شده</option><option value="overdue">معوق</option></select></div>
+        <div class="field"><label>روش پرداخت</label><input id="inc-method" placeholder="کارت به کارت" /></div>
+      </div>
+      <div class="field"><label>یادداشت</label><textarea id="inc-notes" placeholder="شماره تراکنش، توضیحات..."></textarea></div>
+      <div style="display:flex;gap:10px"><button class="btn" id="inc-save" style="flex:1">ثبت درآمد</button><button class="btn ghost" id="inc-cancel">انصراف</button></div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <nav class="tabs">
@@ -697,6 +751,7 @@
   <button data-v="projects"><span class="ti">▦</span>پروژه‌ها</button>
   <button data-v="crm"><span class="ti">👥</span>CRM</button>
   <button data-v="content"><span class="ti">📝</span>محتوا</button>
+  <button data-v="financial"><span class="ti">💰</span>مالی</button>
   <button data-v="approvals"><span class="ti">🔐</span>تأیید</button>
   <button data-v="notifications"><span class="ti">🔔</span>اعلان</button>
   <button data-v="conn"><span class="ti">🔌</span>اتصال</button>
@@ -1948,6 +2003,38 @@ async function loadGoogleData(projectSlug){
     if(!h) h = `<div class="muted-s">داده گوگل برای این پروژه هنوز بارگذاری نشده یا اتصال تنظیم نشده.</div>`;
     if(summaryEl) summaryEl.innerHTML = h;
 
+    // Daily trend chart
+    const dailyChartEl = document.getElementById('googleDailyChart');
+    if(dailyChartEl){
+      if(g.gsc && g.gsc.daily && g.gsc.daily.dates && g.gsc.daily.dates.length){
+        const daily = g.gsc.daily;
+        const labels = daily.dates.map(d=>d.slice(5)); // MM-DD
+        dailyChartEl.innerHTML = `<div class="muted-s" style="font-weight:700;margin-bottom:6px">📈 روند روزانه کلیک / نمایش (۲۸ روز)</div>` +
+          Charts.lineChart({
+            labels: labels,
+            height: 160,
+            series: [
+              {data: daily.clicks, color: '#6c8cff'},
+              {data: daily.impressions.map(v=>Math.round(v/10)), color: '#36e2b0'},
+            ]
+          }) + `<div class="legend"><span><i style="background:#6c8cff"></i>کلیک</span><span><i style="background:#36e2b0"></i>نمایش (÷۱۰)</span></div>`;
+      } else if(ANALYTICS && ANALYTICS.gsc_trend && ANALYTICS.gsc_trend.gsc && ANALYTICS.gsc_trend.gsc.dates && ANALYTICS.gsc_trend.gsc.dates.length){
+        const daily = ANALYTICS.gsc_trend.gsc;
+        const labels = daily.dates_jalali ? daily.dates_jalali.map(d=>d.slice(5)) : daily.dates.map(d=>d.slice(5));
+        dailyChartEl.innerHTML = `<div class="muted-s" style="font-weight:700;margin-bottom:6px">📈 روند روزانه (ذخیره‌شده)</div>` +
+          Charts.lineChart({
+            labels: labels,
+            height: 160,
+            series: [
+              {data: daily.clicks, color: '#6c8cff'},
+              {data: daily.impressions.map(v=>Math.round(v/10)), color: '#36e2b0'},
+            ]
+          });
+      } else {
+        dailyChartEl.innerHTML = '';
+      }
+    }
+
     // Top queries
     if(queriesEl){
       let qh = '';
@@ -1964,6 +2051,15 @@ async function loadGoogleData(projectSlug){
           const keys = p.keys || [];
           const page = keys[0]||'';
           return `<div class="item"><div class="t" style="font-size:12px;direction:ltr;text-align:left">${esc(page.slice(0,80))}</div><div class="meta"><span>${fa(Math.round(p.clicks||0))} کلیک</span></div></div>`;
+        }).join('');
+      }
+      // Device breakdown
+      if(g.gsc && g.gsc.devices && g.gsc.devices.length){
+        qh += `<div class="muted-s" style="font-weight:700;margin:12px 0 6px">📱 تفکیک دستگاه</div>`;
+        qh += g.gsc.devices.map(d=>{
+          const dev = (d.keys||[])[0]||'';
+          const label = {DESKTOP:'دسکتاپ',MOBILE:'موبایل',TABLET:'تبلت'}[dev]||dev;
+          return `<div class="item"><div class="t">${esc(label)}</div><div class="meta"><span>${fa(Math.round(d.clicks||0))} کلیک</span><span>CTR ${((d.ctr||0)*100).toFixed(1)}٪</span></div></div>`;
         }).join('');
       }
       queriesEl.innerHTML = qh;
@@ -2080,7 +2176,218 @@ async function loadSalesPipeline(projectSlug){
   }
 }
 
+
+/* ---------- Financial — Monthly Income (redefined §15) ---------- */
+let currentFinancialFilter='current';
+async function loadFinancial(f){
+  currentFinancialFilter = f || currentFinancialFilter;
+  document.querySelectorAll('#financialSeg button').forEach(b=>b.classList.toggle('on', b.dataset.f===currentFinancialFilter));
+  const list=$('#financialList');
+  const statsEl=$('#financialStats');
+  const summaryEl=$('#financialSummary');
+  const monthEl=$('#financialMonth');
+  const contractsEl=$('#contractsList');
+  if(list) list.innerHTML = skeleton(4);
+  if(statsEl) statsEl.innerHTML = skeleton(2,'sk-card');
+  try{
+    const data = await api('/api/financial/summary');
+    const summary = data.summary;
+    const contracts = data.contracts || [];
+
+    if(monthEl) monthEl.textContent = summary.current_month || '';
+    if(statsEl){
+      statsEl.innerHTML = `<div class="stats">
+        <div class="stat ok"><div class="n">${Charts.compact(summary.total_paid)}</div><div class="l">وصولی</div></div>
+        <div class="stat"><div class="n">${Charts.compact(summary.total_expected)}</div><div class="l">کل انتظار</div></div>
+        <div class="stat ${summary.collection_rate<70?'warn':''}"><div class="n">${fa(summary.collection_rate)}٪</div><div class="l">نرخ وصول</div></div>
+        <div class="stat ${summary.overdue && summary.overdue.length?'hot':''}"><div class="n">${fa(summary.overdue?summary.overdue.length:0)}</div><div class="l">معوق</div></div>
+      </div>`;
+    }
+
+    if(summaryEl){
+      let h = '';
+      if(summary.months && summary.months.length){
+        h += `<div class="muted-s" style="font-weight:700;margin-bottom:6px">📊 ۶ ماه اخیر</div>`;
+        h += `<div class="chart-wrap">${Charts.barList({data: summary.months.slice(0,6).map(m=>({label: m.month_jalali, value: m.paid, color: m.paid_percent>=100 ? '#36e2b0' : m.paid_percent>=50 ? '#ffb454' : '#ff6b81'}))})}</div>`;
+      }
+      summaryEl.innerHTML = h;
+    }
+
+    if(contractsEl){
+      if(!contracts.length) contractsEl.innerHTML = emptyState('📋','پروژه فعالی نیست');
+      else {
+        contractsEl.innerHTML = contracts.map(c=>{
+          const curEmoji = {paid:'✅',pending:'⏳',overdue:'🔴',not_created:'➕'}[c.current_month_status] || '•';
+          return `<div class="item" onclick="loadFinancialDetail('${esc(c.slug)}')">
+            <div class="top"><div class="t">${curEmoji} ${esc(c.name)}</div><span class="badge ${c.overdue_count?'b-urgent':'b-normal'}">${c.overdue_count? fa(c.overdue_count)+' معوق' : 'مرتب'}</span></div>
+            <div class="meta"><span>میانگین قرارداد: ${Charts.compact(c.avg_contract)} IRT</span><span>ماه جاری: ${esc(c.current_month_status)}</span></div>
+          </div>`;
+        }).join('');
+      }
+    }
+
+    // Filtered list
+    let items = [];
+    if(currentFinancialFilter==='current'){
+      items = summary.current_month_incomes || [];
+    } else if(currentFinancialFilter==='overdue'){
+      items = summary.overdue || [];
+    } else if(currentFinancialFilter==='pending'){
+      items = summary.pending || [];
+    } else {
+      // all — fetch from /api/financial/incomes
+      const allData = await api('/api/financial/incomes?limit=50');
+      items = allData.incomes || [];
+    }
+
+    if(list){
+      if(!items.length){
+        list.innerHTML = emptyState('💰','موردی در این نما نیست');
+      } else {
+        list.innerHTML = items.map(inc=>{
+          const emoji = {paid:'✅',pending:'⏳',overdue:'🔴',cancelled:'❌',partial:'🟡'}[inc.status] || '•';
+          return `<div class="item ${inc.status==='overdue'?'hot':''}">
+            <div class="top"><div class="t">${emoji} ${esc(inc.project_name)} — ${esc(inc.month_jalali)}</div><span class="badge ${inc.status==='paid'?'b-done':inc.status==='overdue'?'b-urgent':'b-normal'}">${esc(inc.status)}</span></div>
+            <div class="meta"><span>${Charts.compact(inc.amount)} ${esc(inc.currency)}</span><span>${inc.paid_at? 'پرداخت: '+timeAgo(inc.paid_at) : 'موعد: '+(inc.due_at?timeAgo(inc.due_at):'—')}</span></div>
+            ${inc.notes?`<div class="muted-s">${esc(inc.notes.slice(0,80))}</div>`:''}
+            <div style="display:flex;gap:6px;margin-top:6px">
+              ${inc.status!=='paid'?`<button class="btn sm ok" style="flex:1" onclick="markIncomePaid('${esc(inc.income_uid)}')">✅ ثبت پرداخت</button>`:''}
+              <button class="btn sm ghost" style="flex:1" onclick="if(confirm('حذف شود؟')) deleteIncome('${esc(inc.income_uid)}')">🗑</button>
+            </div>
+          </div>`;
+        }).join('');
+      }
+    }
+
+  }catch(e){
+    if(list) list.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+
+function openIncomeSheet(){
+  if(!window._projects) loadProjects();
+  const sel=$('#inc-project');
+  if(sel && window._projects){
+    sel.innerHTML = '<option value="">انتخاب پروژه</option>' + window._projects.map(p=>`<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('');
+  }
+  // Default month to current Jalali
+  const now = new Date();
+  // Approximate Jalali month — we will fetch from API for accuracy
+  (async()=>{
+    try{
+      const data = await api('/api/financial/summary');
+      if(data.summary && data.summary.current_month && $('#inc-month')){
+        $('#inc-month').value = data.summary.current_month;
+      }
+    }catch(e){}
+  })();
+  $('#incomeBack').classList.add('open');
+}
+function closeIncomeSheet(){ $('#incomeBack').classList.remove('open'); }
+
+async function saveIncome(){
+  const btn=$('#inc-save');
+  const proj=$('#inc-project').value;
+  const amount=$('#inc-amount').value;
+  const month=$('#inc-month').value.trim();
+  if(!proj){ toast('پروژه را انتخاب کن'); return; }
+  if(!amount){ toast('مبلغ لازم است'); return; }
+  if(!month){ toast('ماه شمسی لازم است (مثال: 1404-06)'); return; }
+  const payload={
+    project_slug: proj,
+    amount: parseFloat(amount),
+    month_jalali: month,
+    status: $('#inc-status').value,
+    payment_method: $('#inc-method').value.trim()||null,
+    notes: $('#inc-notes').value.trim()||null,
+  };
+  btn.disabled=true; btn.innerHTML='<span class="loader"></span>';
+  try{
+    const r=await api('/api/financial/incomes',{method:'POST',body:JSON.stringify(payload)});
+    if(r.executed) toast('✅ درآمد ثبت شد','ok');
+    else toast('⏳ درخواست ثبت شد');
+    closeIncomeSheet();
+    await loadFinancial();
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+  finally{ btn.disabled=false; btn.textContent='ثبت درآمد'; }
+}
+
+async function markIncomePaid(uid){
+  if(!confirm('پرداخت این ماه ثبت شود؟')) return;
+  try{
+    const r=await api('/api/financial/incomes/'+encodeURIComponent(uid)+'/paid',{method:'POST',body:JSON.stringify({})});
+    if(r.executed) toast('✅ پرداخت ثبت شد','ok');
+    else toast('⏳ درخواست ثبت شد');
+    await loadFinancial();
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+
+async function deleteIncome(uid){
+  try{
+    const r=await api('/api/financial/incomes/'+encodeURIComponent(uid),{method:'DELETE'});
+    if(r.executed) toast('🗑 حذف شد','ok');
+    else toast('⏳ درخواست حذف ثبت شد');
+    await loadFinancial();
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+
+async function loadFinancialDetail(slug){
+  // For now just filter to that project
+  try{
+    const data = await api('/api/financial/incomes?project='+encodeURIComponent(slug)+'&limit=20');
+    const list=$('#financialList');
+    if(list){
+      const items=data.incomes||[];
+      list.innerHTML = items.length ? items.map(inc=>{
+        const emoji = {paid:'✅',pending:'⏳',overdue:'🔴'}[inc.status]||'•';
+        return `<div class="item"><div class="t">${emoji} ${esc(inc.month_jalali)} — ${Charts.compact(inc.amount)} IRT — ${esc(inc.status)}</div></div>`;
+      }).join('') : emptyState('💰','درآمدی برای این پروژه نیست');
+    }
+    document.querySelectorAll('#financialSeg button').forEach(b=>b.classList.remove('on'));
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+
+/* ---------- Enhanced Google Charts (§4, §5) — with daily trends ---------- */
+async function loadGoogleCharts(){
+  // This is called from loadGoogleData but we enhance to show daily line charts
+  try{
+    const trendData = await api('/api/analytics');
+    const gscTrend = trendData.data && trendData.data.gsc_trend ? trendData.data.gsc_trend : null;
+    if(gscTrend && gscTrend.gsc && gscTrend.gsc.dates && gscTrend.gsc.dates.length){
+      const el = document.getElementById('googleDailyChart');
+      if(el){
+        el.innerHTML = Charts.lineChart({
+          labels: gscTrend.gsc.dates_jalali ? gscTrend.gsc.dates_jalali.map(d=>d.slice(5)) : gscTrend.gsc.dates,
+          height: 160,
+          series: [
+            {data: gscTrend.gsc.clicks, color: '#6c8cff'},
+            {data: gscTrend.gsc.impressions.map(v=>Math.round(v/10)), color: '#36e2b0'},
+          ]
+        });
+      }
+    }
+  }catch(e){}
+}
+
+
+async function syncGoogleToStorage(){
+  toast('در حال همگام‌سازی تاریخچه گوگل…');
+  try{
+    // This will trigger storage sync via backend if we add endpoint
+    // For now just call google overview which also syncs if we implement
+    const r = await api('/api/google/sync',{method:'POST'});
+    toast('✅ همگام‌سازی شد: '+(r.saved||0)+' روز','ok');
+    await loadGoogleData();
+  }catch(e){
+    // Fallback: just reload
+    toast('خطا: '+e.message,'err');
+    await loadGoogleData();
+  }
+}
+
 /* ---------- navigation ---------- */
+
+
 
 
 
@@ -2278,6 +2585,38 @@ async function loadGoogleData(projectSlug){
     if(!h) h = `<div class="muted-s">داده گوگل برای این پروژه هنوز بارگذاری نشده یا اتصال تنظیم نشده.</div>`;
     if(summaryEl) summaryEl.innerHTML = h;
 
+    // Daily trend chart
+    const dailyChartEl = document.getElementById('googleDailyChart');
+    if(dailyChartEl){
+      if(g.gsc && g.gsc.daily && g.gsc.daily.dates && g.gsc.daily.dates.length){
+        const daily = g.gsc.daily;
+        const labels = daily.dates.map(d=>d.slice(5)); // MM-DD
+        dailyChartEl.innerHTML = `<div class="muted-s" style="font-weight:700;margin-bottom:6px">📈 روند روزانه کلیک / نمایش (۲۸ روز)</div>` +
+          Charts.lineChart({
+            labels: labels,
+            height: 160,
+            series: [
+              {data: daily.clicks, color: '#6c8cff'},
+              {data: daily.impressions.map(v=>Math.round(v/10)), color: '#36e2b0'},
+            ]
+          }) + `<div class="legend"><span><i style="background:#6c8cff"></i>کلیک</span><span><i style="background:#36e2b0"></i>نمایش (÷۱۰)</span></div>`;
+      } else if(ANALYTICS && ANALYTICS.gsc_trend && ANALYTICS.gsc_trend.gsc && ANALYTICS.gsc_trend.gsc.dates && ANALYTICS.gsc_trend.gsc.dates.length){
+        const daily = ANALYTICS.gsc_trend.gsc;
+        const labels = daily.dates_jalali ? daily.dates_jalali.map(d=>d.slice(5)) : daily.dates.map(d=>d.slice(5));
+        dailyChartEl.innerHTML = `<div class="muted-s" style="font-weight:700;margin-bottom:6px">📈 روند روزانه (ذخیره‌شده)</div>` +
+          Charts.lineChart({
+            labels: labels,
+            height: 160,
+            series: [
+              {data: daily.clicks, color: '#6c8cff'},
+              {data: daily.impressions.map(v=>Math.round(v/10)), color: '#36e2b0'},
+            ]
+          });
+      } else {
+        dailyChartEl.innerHTML = '';
+      }
+    }
+
     // Top queries
     if(queriesEl){
       let qh = '';
@@ -2294,6 +2633,15 @@ async function loadGoogleData(projectSlug){
           const keys = p.keys || [];
           const page = keys[0]||'';
           return `<div class="item"><div class="t" style="font-size:12px;direction:ltr;text-align:left">${esc(page.slice(0,80))}</div><div class="meta"><span>${fa(Math.round(p.clicks||0))} کلیک</span></div></div>`;
+        }).join('');
+      }
+      // Device breakdown
+      if(g.gsc && g.gsc.devices && g.gsc.devices.length){
+        qh += `<div class="muted-s" style="font-weight:700;margin:12px 0 6px">📱 تفکیک دستگاه</div>`;
+        qh += g.gsc.devices.map(d=>{
+          const dev = (d.keys||[])[0]||'';
+          const label = {DESKTOP:'دسکتاپ',MOBILE:'موبایل',TABLET:'تبلت'}[dev]||dev;
+          return `<div class="item"><div class="t">${esc(label)}</div><div class="meta"><span>${fa(Math.round(d.clicks||0))} کلیک</span><span>CTR ${((d.ctr||0)*100).toFixed(1)}٪</span></div></div>`;
         }).join('');
       }
       queriesEl.innerHTML = qh;
@@ -2410,12 +2758,223 @@ async function loadSalesPipeline(projectSlug){
   }
 }
 
+
+/* ---------- Financial — Monthly Income (redefined §15) ---------- */
+let currentFinancialFilter='current';
+async function loadFinancial(f){
+  currentFinancialFilter = f || currentFinancialFilter;
+  document.querySelectorAll('#financialSeg button').forEach(b=>b.classList.toggle('on', b.dataset.f===currentFinancialFilter));
+  const list=$('#financialList');
+  const statsEl=$('#financialStats');
+  const summaryEl=$('#financialSummary');
+  const monthEl=$('#financialMonth');
+  const contractsEl=$('#contractsList');
+  if(list) list.innerHTML = skeleton(4);
+  if(statsEl) statsEl.innerHTML = skeleton(2,'sk-card');
+  try{
+    const data = await api('/api/financial/summary');
+    const summary = data.summary;
+    const contracts = data.contracts || [];
+
+    if(monthEl) monthEl.textContent = summary.current_month || '';
+    if(statsEl){
+      statsEl.innerHTML = `<div class="stats">
+        <div class="stat ok"><div class="n">${Charts.compact(summary.total_paid)}</div><div class="l">وصولی</div></div>
+        <div class="stat"><div class="n">${Charts.compact(summary.total_expected)}</div><div class="l">کل انتظار</div></div>
+        <div class="stat ${summary.collection_rate<70?'warn':''}"><div class="n">${fa(summary.collection_rate)}٪</div><div class="l">نرخ وصول</div></div>
+        <div class="stat ${summary.overdue && summary.overdue.length?'hot':''}"><div class="n">${fa(summary.overdue?summary.overdue.length:0)}</div><div class="l">معوق</div></div>
+      </div>`;
+    }
+
+    if(summaryEl){
+      let h = '';
+      if(summary.months && summary.months.length){
+        h += `<div class="muted-s" style="font-weight:700;margin-bottom:6px">📊 ۶ ماه اخیر</div>`;
+        h += `<div class="chart-wrap">${Charts.barList({data: summary.months.slice(0,6).map(m=>({label: m.month_jalali, value: m.paid, color: m.paid_percent>=100 ? '#36e2b0' : m.paid_percent>=50 ? '#ffb454' : '#ff6b81'}))})}</div>`;
+      }
+      summaryEl.innerHTML = h;
+    }
+
+    if(contractsEl){
+      if(!contracts.length) contractsEl.innerHTML = emptyState('📋','پروژه فعالی نیست');
+      else {
+        contractsEl.innerHTML = contracts.map(c=>{
+          const curEmoji = {paid:'✅',pending:'⏳',overdue:'🔴',not_created:'➕'}[c.current_month_status] || '•';
+          return `<div class="item" onclick="loadFinancialDetail('${esc(c.slug)}')">
+            <div class="top"><div class="t">${curEmoji} ${esc(c.name)}</div><span class="badge ${c.overdue_count?'b-urgent':'b-normal'}">${c.overdue_count? fa(c.overdue_count)+' معوق' : 'مرتب'}</span></div>
+            <div class="meta"><span>میانگین قرارداد: ${Charts.compact(c.avg_contract)} IRT</span><span>ماه جاری: ${esc(c.current_month_status)}</span></div>
+          </div>`;
+        }).join('');
+      }
+    }
+
+    // Filtered list
+    let items = [];
+    if(currentFinancialFilter==='current'){
+      items = summary.current_month_incomes || [];
+    } else if(currentFinancialFilter==='overdue'){
+      items = summary.overdue || [];
+    } else if(currentFinancialFilter==='pending'){
+      items = summary.pending || [];
+    } else {
+      // all — fetch from /api/financial/incomes
+      const allData = await api('/api/financial/incomes?limit=50');
+      items = allData.incomes || [];
+    }
+
+    if(list){
+      if(!items.length){
+        list.innerHTML = emptyState('💰','موردی در این نما نیست');
+      } else {
+        list.innerHTML = items.map(inc=>{
+          const emoji = {paid:'✅',pending:'⏳',overdue:'🔴',cancelled:'❌',partial:'🟡'}[inc.status] || '•';
+          return `<div class="item ${inc.status==='overdue'?'hot':''}">
+            <div class="top"><div class="t">${emoji} ${esc(inc.project_name)} — ${esc(inc.month_jalali)}</div><span class="badge ${inc.status==='paid'?'b-done':inc.status==='overdue'?'b-urgent':'b-normal'}">${esc(inc.status)}</span></div>
+            <div class="meta"><span>${Charts.compact(inc.amount)} ${esc(inc.currency)}</span><span>${inc.paid_at? 'پرداخت: '+timeAgo(inc.paid_at) : 'موعد: '+(inc.due_at?timeAgo(inc.due_at):'—')}</span></div>
+            ${inc.notes?`<div class="muted-s">${esc(inc.notes.slice(0,80))}</div>`:''}
+            <div style="display:flex;gap:6px;margin-top:6px">
+              ${inc.status!=='paid'?`<button class="btn sm ok" style="flex:1" onclick="markIncomePaid('${esc(inc.income_uid)}')">✅ ثبت پرداخت</button>`:''}
+              <button class="btn sm ghost" style="flex:1" onclick="if(confirm('حذف شود؟')) deleteIncome('${esc(inc.income_uid)}')">🗑</button>
+            </div>
+          </div>`;
+        }).join('');
+      }
+    }
+
+  }catch(e){
+    if(list) list.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+
+function openIncomeSheet(){
+  if(!window._projects) loadProjects();
+  const sel=$('#inc-project');
+  if(sel && window._projects){
+    sel.innerHTML = '<option value="">انتخاب پروژه</option>' + window._projects.map(p=>`<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('');
+  }
+  // Default month to current Jalali
+  const now = new Date();
+  // Approximate Jalali month — we will fetch from API for accuracy
+  (async()=>{
+    try{
+      const data = await api('/api/financial/summary');
+      if(data.summary && data.summary.current_month && $('#inc-month')){
+        $('#inc-month').value = data.summary.current_month;
+      }
+    }catch(e){}
+  })();
+  $('#incomeBack').classList.add('open');
+}
+function closeIncomeSheet(){ $('#incomeBack').classList.remove('open'); }
+
+async function saveIncome(){
+  const btn=$('#inc-save');
+  const proj=$('#inc-project').value;
+  const amount=$('#inc-amount').value;
+  const month=$('#inc-month').value.trim();
+  if(!proj){ toast('پروژه را انتخاب کن'); return; }
+  if(!amount){ toast('مبلغ لازم است'); return; }
+  if(!month){ toast('ماه شمسی لازم است (مثال: 1404-06)'); return; }
+  const payload={
+    project_slug: proj,
+    amount: parseFloat(amount),
+    month_jalali: month,
+    status: $('#inc-status').value,
+    payment_method: $('#inc-method').value.trim()||null,
+    notes: $('#inc-notes').value.trim()||null,
+  };
+  btn.disabled=true; btn.innerHTML='<span class="loader"></span>';
+  try{
+    const r=await api('/api/financial/incomes',{method:'POST',body:JSON.stringify(payload)});
+    if(r.executed) toast('✅ درآمد ثبت شد','ok');
+    else toast('⏳ درخواست ثبت شد');
+    closeIncomeSheet();
+    await loadFinancial();
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+  finally{ btn.disabled=false; btn.textContent='ثبت درآمد'; }
+}
+
+async function markIncomePaid(uid){
+  if(!confirm('پرداخت این ماه ثبت شود؟')) return;
+  try{
+    const r=await api('/api/financial/incomes/'+encodeURIComponent(uid)+'/paid',{method:'POST',body:JSON.stringify({})});
+    if(r.executed) toast('✅ پرداخت ثبت شد','ok');
+    else toast('⏳ درخواست ثبت شد');
+    await loadFinancial();
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+
+async function deleteIncome(uid){
+  try{
+    const r=await api('/api/financial/incomes/'+encodeURIComponent(uid),{method:'DELETE'});
+    if(r.executed) toast('🗑 حذف شد','ok');
+    else toast('⏳ درخواست حذف ثبت شد');
+    await loadFinancial();
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+
+async function loadFinancialDetail(slug){
+  // For now just filter to that project
+  try{
+    const data = await api('/api/financial/incomes?project='+encodeURIComponent(slug)+'&limit=20');
+    const list=$('#financialList');
+    if(list){
+      const items=data.incomes||[];
+      list.innerHTML = items.length ? items.map(inc=>{
+        const emoji = {paid:'✅',pending:'⏳',overdue:'🔴'}[inc.status]||'•';
+        return `<div class="item"><div class="t">${emoji} ${esc(inc.month_jalali)} — ${Charts.compact(inc.amount)} IRT — ${esc(inc.status)}</div></div>`;
+      }).join('') : emptyState('💰','درآمدی برای این پروژه نیست');
+    }
+    document.querySelectorAll('#financialSeg button').forEach(b=>b.classList.remove('on'));
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+
+/* ---------- Enhanced Google Charts (§4, §5) — with daily trends ---------- */
+async function loadGoogleCharts(){
+  // This is called from loadGoogleData but we enhance to show daily line charts
+  try{
+    const trendData = await api('/api/analytics');
+    const gscTrend = trendData.data && trendData.data.gsc_trend ? trendData.data.gsc_trend : null;
+    if(gscTrend && gscTrend.gsc && gscTrend.gsc.dates && gscTrend.gsc.dates.length){
+      const el = document.getElementById('googleDailyChart');
+      if(el){
+        el.innerHTML = Charts.lineChart({
+          labels: gscTrend.gsc.dates_jalali ? gscTrend.gsc.dates_jalali.map(d=>d.slice(5)) : gscTrend.gsc.dates,
+          height: 160,
+          series: [
+            {data: gscTrend.gsc.clicks, color: '#6c8cff'},
+            {data: gscTrend.gsc.impressions.map(v=>Math.round(v/10)), color: '#36e2b0'},
+          ]
+        });
+      }
+    }
+  }catch(e){}
+}
+
+
+async function syncGoogleToStorage(){
+  toast('در حال همگام‌سازی تاریخچه گوگل…');
+  try{
+    // This will trigger storage sync via backend if we add endpoint
+    // For now just call google overview which also syncs if we implement
+    const r = await api('/api/google/sync',{method:'POST'});
+    toast('✅ همگام‌سازی شد: '+(r.saved||0)+' روز','ok');
+    await loadGoogleData();
+  }catch(e){
+    // Fallback: just reload
+    toast('خطا: '+e.message,'err');
+    await loadGoogleData();
+  }
+}
+
 /* ---------- navigation ---------- */
 
 
 
+
+
 const LOADERS={overview:loadOverview,tasks:()=>loadTasks(),projects:loadProjectView,
-               crm:()=>loadCrm(),content:()=>loadContent(),approvals:loadApprovals,notifications:()=>loadNotifications(),
+               crm:()=>loadCrm(),content:()=>loadContent(),financial:()=>loadFinancial(),approvals:loadApprovals,notifications:()=>loadNotifications(),
                conn:loadConnections,
                more:()=>{loadMemory();loadLogs();}};
 document.querySelectorAll('nav.tabs button').forEach(b=>{
@@ -2470,6 +3029,12 @@ $('#cg-save').onclick=saveContentGenerate;
 $('#contentDetailClose').onclick=closeContentDetail;
 $('#contentDetailBack').onclick=e=>{ if(e.target.id==='contentDetailBack') closeContentDetail(); };
 document.querySelectorAll('#contentSeg button').forEach(b=>b.onclick=()=>loadContent(b.dataset.f));
+$('#incomeClose').onclick=closeIncomeSheet;
+$('#incomeBack').onclick=e=>{ if(e.target.id==='incomeBack') closeIncomeSheet(); };
+$('#inc-cancel').onclick=closeIncomeSheet;
+$('#inc-save').onclick=saveIncome;
+document.querySelectorAll('#financialSeg button').forEach(b=>b.onclick=()=>loadFinancial(b.dataset.f));
+
 
 
 

@@ -148,7 +148,47 @@
 
 **تست:** ۱۲۴ تست سبز (۱۱۱ قبلی + ۶ content + ۷ google).
 
-> قدم بعدی فاز ۳: OAuth یک‌بار + Search Console + GA4 تکمیل شد — بعدی Business Analyst + Sales Agent + Content Agent کامل با اتصال به GSC برای پیشنهاد موضوع.
+### ✅ قدم ۶ فاز ۳ — Business Analyst + Sales Agent + Financial (بازتعریف) + GSC Charts (انجام شد — ۲۰۲۶-۰۸-۲۷)
+
+**Business Analyst (§12):**
+- `app/agents/business_analyst.py` — تحلیل سلامت کسب‌وکار با امتیاز ۰-۱۰۰، ۱۳ نوع insight (معوق، فوری، کاهش سرعت، CRM خالی/معوق، معاملات راکد، نرخ برد، محتوای منتشرنشده، بودجه پرمصرف، صف تأیید شلوغ، پروژه کم‌پیشرفت) + پیشنهاد اقدام
+- `GET /api/business/analysis` + کارت در خلاصه داشبورد
+
+**Sales Agent (§13):**
+- `app/agents/sales_agent.py` — تحلیل پایپ‌لاین (ارزش کل و وزنی، راکد ۷+ روز، بستن در ۷ روز آینده، پیگیری معوق، اقدام بعدی per stage) + تولید پیام پیگیری فروش با ۳ تون
+- `GET /api/sales/pipeline` + کارت در داشبورد
+
+**Financial — درآمد ماهانه (بازتعریف §15 بر اساس نیاز واقعی شما):**
+- مشکل قبلی: Financial Agent عمومی (هزینه/درآمد) به کار شما نمی‌آمد — شما گفتی هر پروژه ماهانه مبلغ متفاوت واریز می‌کند و پیگیری واریز مهم‌تر است
+- راه‌حل: جدول `project_incomes` با `month_jalali` به صورت `YYYY-MM` (مثلاً ۱۴۰۴-۰۶) + `UNIQUE(project_id, month_jalali)` — هر پروژه در هر ماه شمسی فقط یک رکورد دارد
+  - فیلدها: uid, project_id, amount, currency, month_jalali, month_gregorian, due_at (آخر ماه شمسی), paid_at, status (pending/paid/overdue/cancelled/partial), payment_method, transaction_ref, notes
+  - `mark_overdue_if_needed()` — خودکار pendingهای گذشته از موعد را overdue می‌کند
+  - `monthly_summary()` — ۱۲ ماه اخیر با paid/total/درصد، کل وصولی و نرخ وصول، لیست معوق/در انتظار/ماه جاری
+  - `project_contracts_summary()` — میانگین ۳ ماه آخر پرداختی به‌عنوان مبلغ قرارداد تخمینی + وضعیت ماه جاری + تعداد معوق
+- API: `GET /api/financial/incomes`, `POST /api/financial/incomes`, `POST /api/financial/incomes/<uid>/paid`, `POST /api/financial/incomes/<uid>` (ویرایش), `DELETE`, `GET /api/financial/summary`
+- اجراکننده‌ها: ایجاد/ویرایش/ثبت پرداخت 🟢، حذف 🟡 (نیازمند تأیید)
+- دستور `/finance` / `/income` + تب مالی (۱۰ تب کل) با نمودار ۶ ماه اخیر (barList با رنگ سبز/زرد/قرمز بر اساس درصد وصول)، لیست معوق/در انتظار/ماه جاری، قراردادهای فعال
+- ادغام با Business Analyst — اگر واریز معوق باشد، insight و پیشنهاد «پیگیری واریز» می‌دهد
+- قابل توسعه: می‌توان بعداً ستون‌های `recurring` (ماهیانه خودکار)، `auto_create_next_month`، `discount`, `tax` اضافه کرد
+
+**Monitoring / Analytics — GSC Charts (بازتعریف بر اساس پیشنهاد شما):**
+- مشکل قبلی: پینگ مداوم سایت (Monitoring Agent کلاسیک) منابع مصرف می‌کند و باگ می‌اندازد
+- پیشنهاد شما: به‌جای آپتایم، نمودار Search Console + Analytics با داده واقعی + پیشنهادهای دستیار بر اساس آن
+- راه‌حل:
+  - `app/integrations/google.py` — اضافه شدن `gsc_daily_trend()` (dimensions=["date"]), `gsc_device_breakdown()`, `gsc_country_breakdown()`, `ga4_daily_trend()` (dimensions=["date"])
+  - باگ فیکس: `dimensions or ["query"]` → `dimensions if dimensions is not None else ["query"]` تا `dimensions=[]` برای آمار کلی کار کند
+  - `app/integrations/gsc_storage.py` — ذخیره تاریخچه روزانه در `gsc_daily_stats` و `ga4_daily_stats` با `ON CONFLICT DO UPDATE` — کم‌مصرف، بدون کرون مداوم، فقط وقتی `POST /api/google/sync` صدا زده می‌شود یا در `get_project_google_data()` (که daily را هم می‌گیرد)
+  - جداول `gsc_daily_stats` و `ga4_daily_stats` با `date` و `date_jalali` + queries/pages JSON + ایندکس‌ها
+  - API: `POST /api/google/sync` — همگام‌سازی ۲۸ روز اخیر به storage (برای نمودار بدون فشار به API)
+  - داشبورد: کارت گوگل در خلاصه حالا نمودار خطی ۲۸ روزه کلیک/نمایش (SVG)، تفکیک دستگاه (DESKTOP/MOBILE/TABLET)، کوئری‌ها و صفحات برتر + دکمه «💾 ذخیره تاریخچه»
+  - پرونده پروژه: بخش گوگل با آمار کلی + کوئری‌های برتر (async)
+  - `analytics.py`: `gsc_trend_overview()` از storage + `financial_overview()` + business/sales — همه در `/api/analytics` یکجا
+  - این مدل هم کم‌مصرف است (فقط وقتی کاربر بخواهد sync می‌کند یا از cache) و هم داده واقعی برای پیشنهادهای Business Analyst می‌دهد
+
+**تست:** ۱۳۸ تست سبز (۱۲۴ قبلی + ۷ financial + ۷ business_sales).
+
+> قدم بعدی فاز ۳-۴: Content Agent پیشنهاد موضوع از GSC (کوئری‌های با ایمپرشن بالا و CTR پایین) + Monitoring سبک فقط برای GSC/GA4 (بدون پینگ مداوم) + Sales Agent اتصال به تلگرام برای ارسال پیام پیگیری.
+
 
 
 

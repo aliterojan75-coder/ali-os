@@ -291,6 +291,36 @@ def sales_overview() -> dict:
         return {"total_deals": 0, "pipeline_value": 0, "weighted_value": 0, "by_stage": {}, "stale_count": 0, "closing_soon_count": 0}
 
 
+def financial_overview() -> dict:
+    try:
+        from app.financial.repository import monthly_summary, project_contracts_summary
+        s = monthly_summary()
+        contracts = project_contracts_summary()
+        return {
+            "current_month": s["current_month"],
+            "total_paid": s["total_paid"],
+            "total_expected": s["total_expected"],
+            "collection_rate": s["collection_rate"],
+            "overdue_count": len(s["overdue"]),
+            "pending_count": len(s["pending"]),
+            "months": s["months"][:6],
+            "contracts": contracts[:8],
+        }
+    except Exception:
+        return {"current_month": "", "total_paid": 0, "total_expected": 0, "collection_rate": 0, "overdue_count": 0, "pending_count": 0, "months": [], "contracts": []}
+
+
+def gsc_trend_overview() -> dict:
+    try:
+        from app.integrations.gsc_storage import get_gsc_daily_trend, get_ga4_daily_trend
+        # Try to get stored trends (no API call)
+        gsc = get_gsc_daily_trend(days=28)
+        ga4 = get_ga4_daily_trend(days=28)
+        return {"gsc": gsc, "ga4": ga4}
+    except Exception:
+        return {"gsc": {"dates": [], "clicks": [], "impressions": []}, "ga4": {"dates": [], "sessions": []}}
+
+
 def overview() -> dict:
     """Everything the dashboard needs, in one round-trip."""
     counts = {}
@@ -334,4 +364,6 @@ def overview() -> dict:
         "content": content_overview(),
         "business": business_overview(),
         "sales": sales_overview(),
+        "financial": financial_overview(),
+        "gsc_trend": gsc_trend_overview(),
     }

@@ -74,17 +74,31 @@ Telegram → Webhook → Flask/Gunicorn → Master Agent → LLM + Memory + Task
 - ✅ **SEO Agent (§8)** — تحلیل on-page
   - امتیازدهی: طول محتوا، متا، کلمه کلیدی، تراکم، cannibalization، FAQ/CTA
   - دستور `/seo <پروژه>` + `POST /api/content/drafts/<uid>/seo-audit`
-- ✅ **Google Search Console + GA4 (§4, §5)** — داده واقعی
-  - `app/integrations/google.py`: OAuth refresh → access token، `searchanalytics.query` و GA4 `runReport`/`runRealtimeReport`
+- ✅ **Google Search Console + GA4 (§4, §5)** — داده واقعی با نمودار
+  - `app/integrations/google.py`: OAuth refresh → access token، `searchanalytics.query` و GA4 `runReport`/`runRealtimeReport` + `gsc_daily_trend`, `gsc_device_breakdown`, `ga4_daily_trend`
+  - `app/integrations/gsc_storage.py`: ذخیره تاریخچه روزانه GSC/GA4 برای نمودار بدون فشار به API (کم‌مصرف، بدون باگ منابع)
   - `app/tools/google_oauth.py`: ابزار یک‌بار برای گرفتن refresh token (مرورگر + localhost callback)
   - تست اتصال بهبودیافته: لیست سایت‌ها و بررسی Property
-  - `GET /api/projects/<slug>/google` و `/api/google/overview` + `/gsc/queries` + `/ga4/report`
-  - کارت گوگل در خلاصه داشبورد + بخش گوگل در پرونده پروژه + گزارش صبحگاهی شامل GSC/GA4
+  - `GET /api/projects/<slug>/google` و `/api/google/overview` + `/gsc/queries` + `/ga4/report` + `POST /api/google/sync` برای ذخیره تاریخچه
+  - کارت گوگل در خلاصه داشبورد با نمودار خطی روند ۲۸ روزه کلیک/نمایش + تفکیک دستگاه + کوئری‌ها و صفحات برتر + بخش گوگل در پرونده پروژه + گزارش صبحگاهی شامل GSC/GA4
   - دستور `/seo` شامل داده واقعی GSC/GA4
 - ✅ **Automation (§16)** — گزارش صبحگاهی خودکار
   - `app/automation/cron.py` + endpoint امن `/internal/cron?secret=...&job=daily|morning|notifications`
   - برای `cron-job.org` یا GitHub Actions
-- ⬜ Business Analyst, Sales Agent (قدم بعدی فاز ۳)
+- ✅ **Business Analyst (§12)** — تحلیل سلامت کسب‌وکار
+  - امتیاز سلامت ۰-۱۰۰، یافته‌ها (معوق، سرعت، CRM، معاملات راکد، نرخ برد، بودجه) + پیشنهاد اقدام
+  - دستور `/business` + API `/api/business/analysis` + کارت در داشبورد
+- ✅ **Sales Agent (§13)** — پایپ‌لاین فروش
+  - ارزش Pipeline و وزنی، راکد، بستن زودهنگام، اقدام بعدی، تولید پیام پیگیری فروش
+  - دستور `/sales` + API `/api/sales/*` + کارت در داشبورد
+- ✅ **Financial — درآمد ماهانه (بازتعریف §15)** — پیگیری واریز پروژه‌ها
+  - جدول `project_incomes` با ماه شمسی `YYYY-MM`، مبلغ، وضعیت `pending/paid/overdue`، روش پرداخت، شماره تراکنش
+  - هر پروژه فقط یک رکورد در هر ماه شمسی (UNIQUE) — دقیقاً مدل کاری شما: هر پروژه ماهانه مبلغ متفاوت واریز می‌کند
+  - `monthly_summary()` — ۱۲ ماه اخیر، نرخ وصول، معوقات، ماه جاری + `project_contracts_summary()` — میانگین قرارداد ۳ ماه آخر + وضعیت ماه جاری
+  - اتصال به تأیید: ایجاد/ویرایش/ثبت پرداخت 🟢، حذف 🟡
+  - دستور `/finance` / `/income` + API `/api/financial/*` + تب مالی (۱۰ تب کل) با نمودار ۶ ماه اخیر، لیست معوق/در انتظار، قراردادهای فعال
+  - ادغام با Business Analyst — تحلیل درآمد و پیشنهاد پیگیری واریزهای معوق
+- ⬜ Monitoring Agent سبک (فقط GSC/GA4 charts — بدون پینگ مداوم که منابع مصرف کند)
 
 ## دستورات تلگرام
 | دستور | کار |
@@ -98,14 +112,17 @@ Telegram → Webhook → Flask/Gunicorn → Master Agent → LLM + Memory + Task
 | `/crm` | مخاطبان و معاملات CRM + پیگیری‌ها |
 | `/notify` | اعلان‌ها — تسک معوق، تأیید در حال انقضا، CRM |
 | `/content <موضوع>` | تولید مقاله با سئو و Cannibalization چک |
-| `/seo <پروژه>` | وضعیت سئو — Search Console + GA4 + تحلیل محتوا |
+| `/seo <پروژه>` | وضعیت سئو — Search Console + GA4 + تحلیل محتوا + نمودار |
+| `/business` | تحلیل سلامت کسب‌وکار، یافته‌ها و پیشنهاد اقدام |
+| `/sales` | پایپ‌لاین فروش، راکد، بستن زودهنگام، پیام پیگیری |
+| `/finance` یا `/income` | درآمد ماهانه پروژه‌ها — واریزی‌ها، معوقات، نرخ وصول |
 
 بقیه‌ی تعامل زبان طبیعی است؛ Intent Router خودش تشخیص می‌دهد.
 
 ## تست
 
 ```bash
-python -m pytest tests -q      # ۱۲۴ تست پایتون — بدون شبکه، بدون تلگرام واقعی
+python -m pytest tests -q      # ۱۳۸ تست پایتون — بدون شبکه، بدون تلگرام واقعی
 
 # تست رابط کاربری (نیازمند سرور در حال اجرا + npm install jsdom)
 node tests/ui/dashboard.test.mjs   # ۳۰ بررسی رندر واقعی نمودارها

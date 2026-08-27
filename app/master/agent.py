@@ -75,7 +75,6 @@ class MasterAgent:
         if low in ("/connections", "/connect", "اتصال‌ها", "اتصالها", "connections"):
             return {"intent": "list_connections", "confidence": 0.99, "project_slug": None}
         if low in ("/morning", "گزارش صبحگاهی", "صبح بخیر", "morning", "/report", "گزارش روزانه"):
-            # Check for project after command
             parts = text.strip().split(maxsplit=1)
             proj = parts[1].strip() if len(parts) > 1 else None
             return {"intent": "morning_report", "confidence": 0.99, "project_slug": proj}
@@ -101,11 +100,10 @@ class MasterAgent:
             parts = text.strip().split(maxsplit=1)
             proj = parts[1].strip() if len(parts) > 1 else None
             return {"intent": "sales_pipeline", "confidence": 0.99, "project_slug": proj}
-        if low.startswith("/content") or low.startswith("مقاله بنویس") or low.startswith("محتوا بنویس"):
-            # /content <topic> or natural language
-            rest = text.strip().split(maxsplit=1)
-            topic = rest[1].strip() if len(rest) > 1 else None
-            return {"intent": "generate_content", "confidence": 0.99, "project_slug": None, "topic": topic}
+        if low in ("/finance", "/financial", "/income", "/incomes", "مالی", "درآمد", "واریزی", "واریزی‌ها", "درامد"):
+            parts = text.strip().split(maxsplit=1)
+            proj = parts[1].strip() if len(parts) > 1 else None
+            return {"intent": "financial_overview", "confidence": 0.99, "project_slug": proj}
         if low.startswith("/dossier") or low.startswith("پرونده"):
             rest = text.strip().split(maxsplit=1)
             return {
@@ -113,7 +111,11 @@ class MasterAgent:
                 "confidence": 0.99,
                 "project_slug": rest[1].strip() if len(rest) > 1 else None,
             }
-        # Natural language triggers for new intents
+        if low.startswith("/content") or low.startswith("مقاله بنویس") or low.startswith("محتوا بنویس"):
+            rest = text.strip().split(maxsplit=1)
+            topic = rest[1].strip() if len(rest) > 1 else None
+            return {"intent": "generate_content", "confidence": 0.99, "project_slug": None, "topic": topic}
+        # Natural language triggers
         if any(kw in low for kw in ["گزارش صبحگاهی", "morning report", "گزارش صبح"]):
             return {"intent": "morning_report", "confidence": 0.95, "project_slug": None}
         if any(kw in low for kw in ["لیست مخاطبان", "مخاطب جدید", "crm contact"]):
@@ -128,12 +130,14 @@ class MasterAgent:
             return {"intent": "business_analysis", "confidence": 0.85, "project_slug": None}
         if any(kw in low for kw in ["پایپ‌لاین فروش", "گزارش فروش", "وضعیت فروش", "sales report"]):
             return {"intent": "sales_pipeline", "confidence": 0.85, "project_slug": None}
+        if any(kw in low for kw in ["وضعیت مالی", "گزارش مالی", "درآمد ماهانه", "واریزی پروژه", "چقدر واریز"]):
+            return {"intent": "financial_overview", "confidence": 0.9, "project_slug": None}
         if any(kw in low for kw in ["اعلان", "نوتیف", "هشدار"]):
-            # Could be notification request
             if len(low) < 30:
                 return {"intent": "list_notifications", "confidence": 0.8, "project_slug": None}
 
         messages = [
+
             LLMMessage(role="system", content=INTENT_SYSTEM),
             LLMMessage(role="user", content=text),
         ]
@@ -189,6 +193,8 @@ class MasterAgent:
             return self._action_business_analysis(project, user_id)
         if intent == "sales_pipeline":
             return self._action_sales_pipeline(project, user_id)
+        if intent == "financial_overview":
+            return self._action_financial_overview(project, user_id)
         if intent == "help":
             return self._help_text()
 
@@ -731,6 +737,60 @@ class MasterAgent:
         repo.record_event("sales_report_generated", user_id=user_id, project_id=pid, payload={"total_deals": pipeline["total_deals"]})
         return text
 
+    # ── Financial — Monthly Income (redefined §15) ─────────────────────────
+    def _action_financial_overview(self, project, user_id: int) -> str:
+        from app.financial.repository import monthly_summary, project_contracts_summary, list_incomes
+
+        pid = project["id"] if project else None
+        proj_label = project["name"] if project else "همه پروژه‌ها"
+
+        summary = monthly_summary(project_id=pid)
+        contracts = project_contracts_summary()
+
+        if pid:
+            contracts = [c for c in contracts if c["id"] == pid]
+
+        lines = [f"💰 *درآمد ماهانه — {proj_label}*", ""]
+        lines.append(f"📅 ماه جاری شمسی: {summary['current_month']}")
+        lines.append(f"💵 کل وصولی: {summary['total_paid']:,.0f} IRT از {summary['total_expected']:,.0f} IRT — نرخ وصول {summary['collection_rate']}٪")
+        lines.append("")
+
+        if summary["months"]:
+            lines.append("📊 *۱۲ ماه اخیر:*")
+            for m in summary["months"][:6]:
+                status_emoji = "✅" if m["paid_percent"] >= 100 else "🟡" if m["paid_percent"] >= 50 else "🔴"
+                lines.append(f"  {status_emoji} {m['month_jalali']}: {m['paid']:,.0f} / {m['total']:,.0f} IRT ({m['paid_percent']}٪) — {m['count']} پروژه")
+            lines.append("")
+
+        if summary["overdue"]:
+            lines.append(f"⚠️ *معوق ({len(summary['overdue'])}):*")
+            for inc in summary["overdue"][:6]:
+                lines.append(f"  • {inc['project_name']} — {inc['month_jalali']} — {float(inc['amount']):,.0f} IRT")
+            lines.append("")
+
+        if summary["pending"]:
+            lines.append(f"⏳ *در انتظار پرداخت ({len(summary['pending'])}):*")
+            for inc in summary["pending"][:6]:
+                lines.append(f"  • {inc['project_name']} — {inc['month_jalali']} — {float(inc['amount']):,.0f} IRT")
+            lines.append("")
+
+        if summary["current_month_incomes"]:
+            lines.append(f"📅 *وضعیت ماه جاری ({summary['current_month']}):*")
+            for inc in summary["current_month_incomes"][:8]:
+                emoji = {"paid": "✅", "pending": "⏳", "overdue": "🔴", "cancelled": "❌"}.get(inc["status"], "•")
+                lines.append(f"  {emoji} {inc['project_name']} — {float(inc['amount']):,.0f} IRT — {inc['status']}")
+            lines.append("")
+
+        if not pid:
+            # Show contracts overview
+            lines.append("📋 *قراردادهای فعال:*")
+            for c in contracts[:8]:
+                cur_emoji = {"paid": "✅", "pending": "⏳", "overdue": "🔴", "not_created": "➕"}.get(c["current_month_status"], "•")
+                lines.append(f"  {cur_emoji} {c['name']}: میانگین {c['avg_contract']:,.0f} IRT — ماه جاری {c['current_month_status']} — {c['overdue_count']} معوق")
+
+        lines.append("\n_برای ثبت واریز بگو: «گیاهکده ۱۵ میلیون واریز کرد برای ۱۴۰۴-۰۶» یا از داشبورد._")
+        return "\n".join(lines)
+
     # ── Chat with full context ─────────────────────────────────────────────
     def _action_chat(self, msg: IncomingMessage, convo_id: int, project) -> str:
         projects = repo.list_projects(active_only=True)
@@ -793,7 +853,8 @@ class MasterAgent:
             "• محتوا: /content <موضوع> — تولید مقاله با سئو و Cannibalization چک\n"
             "• سئو: /seo <پروژه> — وضعیت Search Console + GA4 + تحلیل محتوا\n"
             "• بیزنس: /business — تحلیل سلامت کسب‌وکار، یافته‌ها و پیشنهاد اقدام\n"
-            "• فروش: /sales — پایپ‌لاین معاملات، راکد، بستن زودهنگام، اقدام بعدی\n\n"
+            "• فروش: /sales — پایپ‌لاین معاملات، راکد، بستن زودهنگام، اقدام بعدی\n"
+            "• مالی: /finance یا /income — درآمد ماهانه پروژه‌ها، واریزی‌ها، معوقات\n\n"
             "🔐 سیستم تأیید سه‌سطحی فعال است: 🟢 مستقیم اجرا می‌شود، "
             "🟡 یک تأیید و 🔴 دو تأیید از تو می‌گیرد.\n\n"
             "پروژه‌های فعلی: Net Nova، گیاهکده، E-Ferdowsi، امداد سرویس قم، CropExport، آبادگران، Sir-Siah.\n\n"

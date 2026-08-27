@@ -47,6 +47,12 @@ ACTION_RISK: dict[str, str] = {
     "content.draft_create": GREEN,
     "content.draft_update": GREEN,
     "seo.audit": GREEN,
+    "income.create": GREEN,
+    "financial.create_income": GREEN,
+    "income.update": GREEN,
+    "financial.update_income": GREEN,
+    "income.mark_paid": GREEN,
+    "financial.mark_paid": GREEN,
     # changes with real consequences
     "task.delete": YELLOW,
     "project.update": YELLOW,
@@ -62,6 +68,8 @@ ACTION_RISK: dict[str, str] = {
     "crm.update_deal_stage": YELLOW,
     "crm.delete_interaction": YELLOW,
     "content.delete_draft": YELLOW,
+    "income.delete": YELLOW,
+    "financial.delete_income": YELLOW,
     # irreversible / public / costly
     "wordpress.publish": RED,
     "wordpress.delete_post": RED,

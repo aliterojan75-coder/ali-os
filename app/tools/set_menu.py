@@ -42,6 +42,8 @@ BOT_COMMANDS = [
     {"command": "seo", "description": "وضعیت سئو — Search Console + GA4"},
     {"command": "business", "description": "تحلیل کسب‌وکار — سلامت و پیشنهاد"},
     {"command": "sales", "description": "پایپ‌لاین فروش — معاملات و پیگیری"},
+    {"command": "finance", "description": "درآمد ماهانه — واریزی پروژه‌ها"},
+    {"command": "income", "description": "ثبت واریز — /income پروژه مبلغ ماه"},
 ]
 
 
