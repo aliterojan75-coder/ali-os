@@ -28,5 +28,23 @@ def set_menu_button() -> bool:
     return True
 
 
+# Slash commands shown in the Telegram "/" menu (Phase 2).
+BOT_COMMANDS = [
+    {"command": "start", "description": "معرفی و راهنما"},
+    {"command": "tasks", "description": "Taskهای باز"},
+    {"command": "approvals", "description": "صف تأیید (اقدامات در انتظار)"},
+    {"command": "dossier", "description": "پرونده کامل پروژه — /dossier giahkade"},
+]
+
+
+def set_bot_commands() -> bool:
+    """Register the slash-command menu so Ali sees the Phase 2 commands."""
+    _call("setMyCommands", {"commands": BOT_COMMANDS})
+    log.info("telegram.set_commands_ok",
+             extra={"extra_fields": {"count": len(BOT_COMMANDS)}})
+    return True
+
+
 if __name__ == "__main__":
     set_menu_button()
+    set_bot_commands()

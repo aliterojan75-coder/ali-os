@@ -177,6 +177,109 @@ def events():
     return jsonify({"ok": True, "events": items})
 
 
+# ── Approval System (§19) ───────────────────────────────────────────────────
+
+@api.get("/approvals")
+def approvals_list():
+    repo.expire_stale_actions()
+    status = request.args.get("status")
+    open_only = request.args.get("all") != "1"
+    limit = min(int(request.args.get("limit", 30)), 200)
+    items = _rows(repo.list_pending_actions(
+        status=status, open_only=open_only, limit=limit
+    ))
+    for a in items:
+        try:
+            a["payload"] = json.loads(a.get("payload_json") or "{}")
+        except Exception:  # noqa: BLE001
+            a["payload"] = {}
+    return jsonify({"ok": True, "approvals": items})
+
+
+@api.post("/approvals/<action_uid>/<decision>")
+def approvals_decide(action_uid: str, decision: str):
+    from app import approvals as ap
+
+    if decision not in ("approve", "reject"):
+        return jsonify({"ok": False, "error": "decision must be approve|reject"}), 400
+    telegram_id = (g.telegram_user or {}).get("id")
+    try:
+        if decision == "approve":
+            action, result, toast = ap.approve(action_uid, telegram_id)
+            payload = {"executed": result.executed if result else False,
+                       "result": result.result if result else None}
+        else:
+            action, toast = ap.reject(action_uid, telegram_id)
+            payload = {"executed": False}
+    except ap.DecisionError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 409
+    return jsonify({"ok": True, "message": toast, "action": _row(action), **payload})
+
+
+# ── Full project dossier (§2) ───────────────────────────────────────────────
+
+@api.get("/projects/<slug>/dossier")
+def project_dossier(slug: str):
+    project = repo.get_project(slug)
+    if project is None:
+        return jsonify({"ok": False, "error": "project not found"}), 404
+    return jsonify({"ok": True, "dossier": repo.project_dossier(project)})
+
+
+@api.post("/projects/<slug>/kpis")
+def add_project_kpi(slug: str):
+    project = repo.get_project(slug)
+    if project is None:
+        return jsonify({"ok": False, "error": "project not found"}), 404
+    body = request.get_json(silent=True) or {}
+    name = (body.get("name") or "").strip()
+    if not name:
+        return jsonify({"ok": False, "error": "name is required"}), 400
+    kpi = repo.add_kpi(
+        project_id=project["id"], name=name,
+        target_value=body.get("target_value"), current_value=body.get("current_value"),
+        unit=body.get("unit"), period=body.get("period", "monthly"),
+        direction=body.get("direction", "up"), notes=body.get("notes"),
+    )
+    return jsonify({"ok": True, "kpi": _row(kpi)})
+
+
+@api.post("/projects/<slug>/people")
+def add_project_person(slug: str):
+    project = repo.get_project(slug)
+    if project is None:
+        return jsonify({"ok": False, "error": "project not found"}), 404
+    body = request.get_json(silent=True) or {}
+    name = (body.get("name") or "").strip()
+    if not name:
+        return jsonify({"ok": False, "error": "name is required"}), 400
+    person = repo.add_person(
+        project_id=project["id"], name=name, role=body.get("role"),
+        contact=body.get("contact"), responsibility=body.get("responsibility"),
+        is_internal=bool(body.get("is_internal", True)), notes=body.get("notes"),
+    )
+    return jsonify({"ok": True, "person": _row(person)})
+
+
+@api.post("/projects/<slug>/budget")
+def add_project_budget(slug: str):
+    project = repo.get_project(slug)
+    if project is None:
+        return jsonify({"ok": False, "error": "project not found"}), 404
+    body = request.get_json(silent=True) or {}
+    label = (body.get("label") or "").strip()
+    if not label:
+        return jsonify({"ok": False, "error": "label is required"}), 400
+    line = repo.add_budget_line(
+        project_id=project["id"], label=label,
+        amount=float(body.get("amount") or 0), category=body.get("category"),
+        currency=body.get("currency", "IRT"), kind=body.get("kind", "expense"),
+        period=body.get("period"), spent=float(body.get("spent") or 0),
+        notes=body.get("notes"),
+    )
+    return jsonify({"ok": True, "budget_line": _row(line)})
+
+
 @api.get("/health")
 def health():
     return jsonify({"ok": True, "model": config.LLM_MODEL})

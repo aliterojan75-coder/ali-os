@@ -23,12 +23,40 @@ Telegram → Webhook → Flask/Gunicorn → Master Agent → LLM + Memory + Task
   - احراز هویت با امضای HMAC رسمی تلگرام (`initData`)
   - باز شدن از دکمه منوی بات (Menu Button)
 
+## Phase 2 — در حال ساخت
+- ✅ **Approval System سه‌سطحی (§19)** — 🟢 اجرای مستقیم، 🟡 یک تأیید، 🔴 تأیید دو مرحله‌ای
+  - جدول `pending_actions` + دکمه‌های Inline تلگرام `[✅ تأیید] [❌ لغو]` + هندل `callback_query`
+  - هیچ Agentی بدون رکورد تأییدشده عملیات 🟡/🔴 اجرا نمی‌کند
+  - کارت تأیید بعد از تصمیم قفل می‌شود → audit trail داخل خود چت
+  - دستور `/approvals` برای دیدن صف تأیید
+  - 📖 مستند کامل: [`docs/APPROVALS.md`](docs/APPROVALS.md)
+- ✅ **پرونده‌ی کامل پروژه (§2)** — KPI، بودجه، افراد + Task/تصمیم/حافظه/تأییدهای باز
+  - دستور `/dossier <پروژه>` یا «پرونده گیاهکده»
+  - `GET /api/projects/<slug>/dossier`
+- ⬜ CRM پایه، WordPress Agent، PM Agent، جدول `integrations`
+
+## دستورات تلگرام
+| دستور | کار |
+|-------|-----|
+| `/start` | معرفی و راهنما |
+| `/tasks` یا «کارها» | Taskهای باز |
+| `/approvals` | صف اقدامات در انتظار تأیید |
+| `/dossier <پروژه>` | پرونده‌ی کامل پروژه |
+
+بقیه‌ی تعامل زبان طبیعی است؛ Intent Router خودش تشخیص می‌دهد.
+
+## تست
+
+```bash
+python -m pytest tests -q      # ۲۴ تست — بدون شبکه، بدون تلگرام واقعی
+```
+
 ## پنل مدیریت (Mini App)
 - مسیر: `GET /` (یا `/app`) → SPA
 - API: `GET/POST /api/*` با هدر `X-Telegram-Init-Data`
 - ابزارها:
   - `python -m app.tools.set_webhook`
-  - `python -m app.tools.set_menu` (دکمه منوی Mini App)
+  - `python -m app.tools.set_menu` (دکمه منوی Mini App + ثبت دستورات `/`)
 
 ## اجرا
 

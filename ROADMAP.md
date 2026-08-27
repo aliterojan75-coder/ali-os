@@ -8,10 +8,32 @@
 - [x] فیکس Mini App (احراز هویت خودکفا بدون telegram.org) — `app/miniapp/static/index.html` امروز به main اضافه شد
 - [x] همین ROADMAP.md به مخزن اضافه شد
 - [ ] (توصیه‌شده) UptimeRobot روی `https://ali-os.onrender.com/health` هر ۵ دقیقه = سرور همیشه بیدار
-- [ ] شروع فاز ۲ (پایین را ببین)
+- [x] **فاز ۲ شروع شد** — Approval System سه‌سطحی + پرونده‌ی کامل پروژه (پایین را ببین)
 
-> قدم بعدی: جلسه‌ی کدنویسی جدید روی همین مخزن با پیام:
-> «فاز ۲ را شروع کن — اول Approval System با دکمه‌های تأیید داخل تلگرام، بعد پرونده‌ی کامل پروژه. طبق ROADMAP.md پیش برو.»
+### ✅ قدم ۱ فاز ۲ — انجام شد
+
+**Approval System (§19)**
+- جدول `pending_actions` با ریسک 🟢🟡🔴، وضعیت، شمارنده‌ی تأیید و انقضا (TTL)
+- `app/approvals/risk.py` — جدول سیاست `action_type → ریسک`؛ اکشن ناشناخته **هرگز** 🟢 نمی‌شود
+- `app/approvals/registry.py` — ثبت اجراکننده با `@executor("task.create")`
+- `app/approvals/gateway.py` — تنها دروازه‌ی اجرای عملیات: 🟢 مستقیم، 🟡 یک تأیید، 🔴 دو تأیید
+- دکمه‌های Inline تلگرام `[✅ تأیید] [❌ لغو]` + هندل `callback_query` در `/webhook`
+- کارت تأیید بعد از تصمیم با `editMessageText` قفل می‌شود (audit در خود چت)
+- محافظت‌ها: فقط درخواست‌دهنده تصمیم می‌گیرد، تصمیم دوباره ممکن نیست، انقضا، خطای
+  اجراکننده در `failed` ثبت می‌شود، قطعی تلگرام تصمیم ثبت‌شده را برنمی‌گرداند
+- `/approvals` = صف تأیید
+
+**پرونده‌ی کامل پروژه (§2)**
+- جداول `project_kpis` / `project_budget` / `project_people`
+- `repo.project_dossier()` = هویت + KPI + بودجه (با جمع تفکیکی ارز) + افراد + Task باز +
+  تصمیم‌ها + حافظه + اقدامات در انتظار تأیید
+- `/dossier <پروژه>` یا «پرونده گیاهکده» در تلگرام + `GET /api/projects/<slug>/dossier`
+- KPIهای اولیه‌ی giahkade / esqom / e-ferdowsi / netnova seed شد (مقدار واقعی در فاز ۳ از GSC/GA4)
+
+**تست:** `python -m pytest tests -q` → ۲۴ تست سبز (بدون شبکه).
+
+> قدم بعدی فاز ۲: CRM پایه + WordPress Agent (با اکشن‌های 🔴 `wordpress.publish` که
+> همین حالا در جدول ریسک هست و فقط اجراکننده‌اش را می‌خواهد) + PM Agent + جدول `integrations`.
 
 ---
 
