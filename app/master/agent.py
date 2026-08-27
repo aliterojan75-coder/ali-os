@@ -93,6 +93,14 @@ class MasterAgent:
             parts = text.strip().split(maxsplit=1)
             proj = parts[1].strip() if len(parts) > 1 else None
             return {"intent": "seo_overview", "confidence": 0.99, "project_slug": proj}
+        if low in ("/business", "/ba", "تحلیل کسب‌وکار", "بیزنس", "گزارش بیزنس"):
+            parts = text.strip().split(maxsplit=1)
+            proj = parts[1].strip() if len(parts) > 1 else None
+            return {"intent": "business_analysis", "confidence": 0.99, "project_slug": proj}
+        if low in ("/sales", "فروش", "پایپ‌لاین", "pipeline", "/deals", "معاملات"):
+            parts = text.strip().split(maxsplit=1)
+            proj = parts[1].strip() if len(parts) > 1 else None
+            return {"intent": "sales_pipeline", "confidence": 0.99, "project_slug": proj}
         if low.startswith("/content") or low.startswith("مقاله بنویس") or low.startswith("محتوا بنویس"):
             # /content <topic> or natural language
             rest = text.strip().split(maxsplit=1)
@@ -116,6 +124,10 @@ class MasterAgent:
             return {"intent": "content_overview", "confidence": 0.85, "project_slug": None}
         if any(kw in low for kw in ["وضعیت سئو", "seo", "سئو سایت", "کلمات کلیدی", "ترافیک گوگل"]):
             return {"intent": "seo_overview", "confidence": 0.85, "project_slug": None}
+        if any(kw in low for kw in ["تحلیل کسب‌وکار", "گزارش بیزنس", "business report", "سلامت کسب‌وکار"]):
+            return {"intent": "business_analysis", "confidence": 0.85, "project_slug": None}
+        if any(kw in low for kw in ["پایپ‌لاین فروش", "گزارش فروش", "وضعیت فروش", "sales report"]):
+            return {"intent": "sales_pipeline", "confidence": 0.85, "project_slug": None}
         if any(kw in low for kw in ["اعلان", "نوتیف", "هشدار"]):
             # Could be notification request
             if len(low) < 30:
@@ -173,6 +185,10 @@ class MasterAgent:
             return self._action_generate_content(project, user_id, msg.chat_id, topic)
         if intent == "seo_overview":
             return self._action_seo_overview(project, user_id)
+        if intent == "business_analysis":
+            return self._action_business_analysis(project, user_id)
+        if intent == "sales_pipeline":
+            return self._action_sales_pipeline(project, user_id)
         if intent == "help":
             return self._help_text()
 
@@ -695,6 +711,26 @@ class MasterAgent:
         lines.append("\n_برای جزئیات کامل داشبورد را باز کن → خلاصه → کارت گوگل._")
         return "\n".join(lines)
 
+    # ── Business Analyst (§12) ─────────────────────────────────────────────
+    def _action_business_analysis(self, project, user_id: int) -> str:
+        from app.agents.business_analyst import analyze_business, format_business_report_telegram
+
+        pid = project["id"] if project else None
+        analysis = analyze_business(project_id=pid)
+        text = format_business_report_telegram(analysis)
+        repo.record_event("business_analysis_generated", user_id=user_id, project_id=pid, payload={"health_score": analysis["health_score"]})
+        return text
+
+    # ── Sales Agent (§13) ────────────────────────────────────────────────────
+    def _action_sales_pipeline(self, project, user_id: int) -> str:
+        from app.agents.sales_agent import analyze_sales_pipeline, format_sales_report_telegram
+
+        pid = project["id"] if project else None
+        pipeline = analyze_sales_pipeline(project_id=pid)
+        text = format_sales_report_telegram(pipeline)
+        repo.record_event("sales_report_generated", user_id=user_id, project_id=pid, payload={"total_deals": pipeline["total_deals"]})
+        return text
+
     # ── Chat with full context ─────────────────────────────────────────────
     def _action_chat(self, msg: IncomingMessage, convo_id: int, project) -> str:
         projects = repo.list_projects(active_only=True)
@@ -755,7 +791,9 @@ class MasterAgent:
             "• مخاطبان و معاملات: /crm — مدیریت CRM پایه\n"
             "• اعلان‌ها: /notify — تسک‌های معوق، تأییدهای در حال انقضا، پیگیری‌های CRM\n"
             "• محتوا: /content <موضوع> — تولید مقاله با سئو و Cannibalization چک\n"
-            "• سئو: /seo <پروژه> — وضعیت Search Console + GA4 + تحلیل محتوا\n\n"
+            "• سئو: /seo <پروژه> — وضعیت Search Console + GA4 + تحلیل محتوا\n"
+            "• بیزنس: /business — تحلیل سلامت کسب‌وکار، یافته‌ها و پیشنهاد اقدام\n"
+            "• فروش: /sales — پایپ‌لاین معاملات، راکد، بستن زودهنگام، اقدام بعدی\n\n"
             "🔐 سیستم تأیید سه‌سطحی فعال است: 🟢 مستقیم اجرا می‌شود، "
             "🟡 یک تأیید و 🔴 دو تأیید از تو می‌گیرد.\n\n"
             "پروژه‌های فعلی: Net Nova، گیاهکده، E-Ferdowsi، امداد سرویس قم، CropExport، آبادگران، Sir-Siah.\n\n"

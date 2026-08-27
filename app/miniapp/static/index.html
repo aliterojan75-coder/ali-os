@@ -335,6 +335,26 @@
       </div>
     </div>
 
+    <div class="card" id="businessCard">
+      <h2><span class="ico">📊</span> تحلیل کسب‌وکار <span class="right" id="businessScore"></span></h2>
+      <div id="businessSummary"></div>
+      <div class="list" id="businessInsights"></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn sm ghost" style="flex:1" onclick="loadBusinessAnalysis()">🔄 تحلیل مجدد</button>
+        <button class="btn sm ghost" style="flex:1" onclick="openMorningReport()">🌅 گزارش صبحگاهی</button>
+      </div>
+    </div>
+
+    <div class="card" id="salesCard">
+      <h2><span class="ico">💼</span> پایپ‌لاین فروش <span class="right" id="salesValue"></span></h2>
+      <div id="salesSummary"></div>
+      <div class="list" id="salesList"></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn sm ghost" style="flex:1" onclick="loadSalesPipeline()">🔄 بروزرسانی فروش</button>
+        <button class="btn sm ghost" style="flex:1" onclick="document.querySelector('nav.tabs button[data-v=crm]').click()">👥 CRM</button>
+      </div>
+    </div>
+
     <div class="card">
       <h2><span class="ico">📊</span> نگاه کلی</h2>
       <div class="stats" id="stats"></div>
@@ -940,6 +960,8 @@ async function loadOverview(){
   // Load notification preview
   try{ await loadNotifPreview(); }catch(e){}
   try{ await loadGoogleData(); }catch(e){}
+  try{ await loadBusinessAnalysis(); }catch(e){}
+  try{ await loadSalesPipeline(); }catch(e){}
 
   updateBadges();
 }
@@ -1963,7 +1985,103 @@ async function loadGoogleData(projectSlug){
   }
 }
 
+
+/* ---------- Business Analyst + Sales Agent (§12, §13) ---------- */
+async function loadBusinessAnalysis(projectSlug){
+  const scoreEl = $('#businessScore');
+  const summaryEl = $('#businessSummary');
+  const insightsEl = $('#businessInsights');
+  if(summaryEl) summaryEl.innerHTML = skeleton(2,'sk-line');
+  if(insightsEl) insightsEl.innerHTML = '';
+  try{
+    let url = '/api/business/analysis';
+    if(projectSlug) url = '/api/projects/'+encodeURIComponent(projectSlug)+'/business';
+    const r = await api(url);
+    const a = r.analysis;
+    if(scoreEl) scoreEl.textContent = fa(a.health_score)+'٪ '+esc(a.health_label);
+    let h = `<div class="stats" style="margin-bottom:10px">
+      <div class="stat ${a.health_score<50?'hot':a.health_score<70?'warn':''}"><div class="n">${fa(a.health_score)}٪</div><div class="l">سلامت</div></div>
+      <div class="stat"><div class="n">${fa(a.counts.open_tasks||0)}</div><div class="l">تسک باز</div></div>
+      <div class="stat"><div class="n">${fa(a.counts.overdue_tasks||0)}</div><div class="l">معوق</div></div>
+      <div class="stat"><div class="n">${fa(a.counts.deals_total||0)}</div><div class="l">معامله</div></div>
+    </div>`;
+    if(summaryEl) summaryEl.innerHTML = h;
+
+    if(insightsEl){
+      let ih = '';
+      if(a.insights && a.insights.length){
+        ih += a.insights.slice(0,5).map(ins=>{
+          const sev = ins.severity;
+          const badge = sev==='high' ? 'b-urgent' : sev==='medium' ? 'b-high' : 'b-normal';
+          const icon = sev==='high' ? '🔴' : sev==='medium' ? '🟡' : '🟢';
+          return `<div class="item ${sev==='high'?'hot':''}"><div class="top"><div class="t">${icon} ${esc(ins.title)}</div><span class="badge ${badge}">${esc(sev)}</span></div><div class="muted-s">${esc(ins.detail||'')}</div></div>`;
+        }).join('');
+      }
+      if(a.recommendations && a.recommendations.length){
+        ih += `<div class="muted-s" style="font-weight:700;margin:10px 0 6px">💡 پیشنهاد اقدام:</div>`;
+        ih += a.recommendations.slice(0,4).map((rec,i)=>`<div class="muted-s">${fa(i+1)}. ${esc(rec)}</div>`).join('');
+      }
+      insightsEl.innerHTML = ih || `<div class="muted-s">یافته‌ای نیست — همه چیز مرتب است ✅</div>`;
+    }
+
+  }catch(e){
+    if(summaryEl) summaryEl.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+
+async function loadSalesPipeline(projectSlug){
+  const valueEl = $('#salesValue');
+  const summaryEl = $('#salesSummary');
+  const listEl = $('#salesList');
+  if(summaryEl) summaryEl.innerHTML = skeleton(2,'sk-line');
+  if(listEl) listEl.innerHTML = '';
+  try{
+    let url = '/api/sales/pipeline';
+    if(projectSlug) url = '/api/projects/'+encodeURIComponent(projectSlug)+'/sales';
+    const r = await api(url);
+    const p = r.pipeline;
+    if(valueEl) valueEl.textContent = Charts.compact(p.pipeline_value)+' IRT';
+    let h = `<div class="stats" style="margin-bottom:10px">
+      <div class="stat"><div class="n">${fa(p.total_deals)}</div><div class="l">معامله</div></div>
+      <div class="stat"><div class="n">${Charts.compact(p.pipeline_value)}</div><div class="l">Pipeline</div></div>
+      <div class="stat"><div class="n">${Charts.compact(p.weighted_value)}</div><div class="l">وزنی</div></div>
+      <div class="stat ${p.stale_deals && p.stale_deals.length?'warn':''}"><div class="n">${fa(p.stale_deals? p.stale_deals.length:0)}</div><div class="l">راکد</div></div>
+    </div>`;
+    // Stage breakdown
+    const stageLabels={lead:'سرنخ',qualified:'واجد شرایط',proposal:'پیشنهاد',negotiation:'مذاکره',won:'برنده',lost:'باخته'};
+    if(p.by_stage){
+      h += `<div class="muted-s" style="margin:8px 0 6px">تفکیک مرحله:</div><div class="list">`;
+      Object.entries(p.by_stage).forEach(([stage,count])=>{
+        if(count>0) h+=`<div class="muted-s">${esc(stageLabels[stage]||stage)}: ${fa(count)}</div>`;
+      });
+      h+=`</div>`;
+    }
+    if(summaryEl) summaryEl.innerHTML = h;
+
+    if(listEl){
+      let lh = '';
+      if(p.stale_deals && p.stale_deals.length){
+        lh += `<div class="muted-s" style="font-weight:700;margin:8px 0 6px">⚠️ راکد:</div>`;
+        lh += p.stale_deals.slice(0,4).map(d=>`<div class="item"><div class="t">${esc(d.title)} — ${fa(d.days_stale)} روز راکد</div></div>`).join('');
+      }
+      if(p.closing_soon && p.closing_soon.length){
+        lh += `<div class="muted-s" style="font-weight:700;margin:10px 0 6px">📅 بستن زودهنگام:</div>`;
+        lh += p.closing_soon.slice(0,4).map(d=>`<div class="item"><div class="t">${esc(d.title)} — ${fa(d.days_to_close)} روز دیگر</div></div>`).join('');
+      }
+      if(p.next_actions && p.next_actions.length){
+        lh += `<div class="muted-s" style="font-weight:700;margin:10px 0 6px">🎯 اقدام بعدی:</div>`;
+        lh += p.next_actions.slice(0,5).map(na=>`<div class="item"><div class="t">${esc(na.title)}: ${esc(na.action)}</div></div>`).join('');
+      }
+      listEl.innerHTML = lh || `<div class="muted-s">داده فروش نیست</div>`;
+    }
+
+  }catch(e){
+    if(summaryEl) summaryEl.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+
 /* ---------- navigation ---------- */
+
 
 
 
@@ -2197,7 +2315,103 @@ async function loadGoogleData(projectSlug){
   }
 }
 
+
+/* ---------- Business Analyst + Sales Agent (§12, §13) ---------- */
+async function loadBusinessAnalysis(projectSlug){
+  const scoreEl = $('#businessScore');
+  const summaryEl = $('#businessSummary');
+  const insightsEl = $('#businessInsights');
+  if(summaryEl) summaryEl.innerHTML = skeleton(2,'sk-line');
+  if(insightsEl) insightsEl.innerHTML = '';
+  try{
+    let url = '/api/business/analysis';
+    if(projectSlug) url = '/api/projects/'+encodeURIComponent(projectSlug)+'/business';
+    const r = await api(url);
+    const a = r.analysis;
+    if(scoreEl) scoreEl.textContent = fa(a.health_score)+'٪ '+esc(a.health_label);
+    let h = `<div class="stats" style="margin-bottom:10px">
+      <div class="stat ${a.health_score<50?'hot':a.health_score<70?'warn':''}"><div class="n">${fa(a.health_score)}٪</div><div class="l">سلامت</div></div>
+      <div class="stat"><div class="n">${fa(a.counts.open_tasks||0)}</div><div class="l">تسک باز</div></div>
+      <div class="stat"><div class="n">${fa(a.counts.overdue_tasks||0)}</div><div class="l">معوق</div></div>
+      <div class="stat"><div class="n">${fa(a.counts.deals_total||0)}</div><div class="l">معامله</div></div>
+    </div>`;
+    if(summaryEl) summaryEl.innerHTML = h;
+
+    if(insightsEl){
+      let ih = '';
+      if(a.insights && a.insights.length){
+        ih += a.insights.slice(0,5).map(ins=>{
+          const sev = ins.severity;
+          const badge = sev==='high' ? 'b-urgent' : sev==='medium' ? 'b-high' : 'b-normal';
+          const icon = sev==='high' ? '🔴' : sev==='medium' ? '🟡' : '🟢';
+          return `<div class="item ${sev==='high'?'hot':''}"><div class="top"><div class="t">${icon} ${esc(ins.title)}</div><span class="badge ${badge}">${esc(sev)}</span></div><div class="muted-s">${esc(ins.detail||'')}</div></div>`;
+        }).join('');
+      }
+      if(a.recommendations && a.recommendations.length){
+        ih += `<div class="muted-s" style="font-weight:700;margin:10px 0 6px">💡 پیشنهاد اقدام:</div>`;
+        ih += a.recommendations.slice(0,4).map((rec,i)=>`<div class="muted-s">${fa(i+1)}. ${esc(rec)}</div>`).join('');
+      }
+      insightsEl.innerHTML = ih || `<div class="muted-s">یافته‌ای نیست — همه چیز مرتب است ✅</div>`;
+    }
+
+  }catch(e){
+    if(summaryEl) summaryEl.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+
+async function loadSalesPipeline(projectSlug){
+  const valueEl = $('#salesValue');
+  const summaryEl = $('#salesSummary');
+  const listEl = $('#salesList');
+  if(summaryEl) summaryEl.innerHTML = skeleton(2,'sk-line');
+  if(listEl) listEl.innerHTML = '';
+  try{
+    let url = '/api/sales/pipeline';
+    if(projectSlug) url = '/api/projects/'+encodeURIComponent(projectSlug)+'/sales';
+    const r = await api(url);
+    const p = r.pipeline;
+    if(valueEl) valueEl.textContent = Charts.compact(p.pipeline_value)+' IRT';
+    let h = `<div class="stats" style="margin-bottom:10px">
+      <div class="stat"><div class="n">${fa(p.total_deals)}</div><div class="l">معامله</div></div>
+      <div class="stat"><div class="n">${Charts.compact(p.pipeline_value)}</div><div class="l">Pipeline</div></div>
+      <div class="stat"><div class="n">${Charts.compact(p.weighted_value)}</div><div class="l">وزنی</div></div>
+      <div class="stat ${p.stale_deals && p.stale_deals.length?'warn':''}"><div class="n">${fa(p.stale_deals? p.stale_deals.length:0)}</div><div class="l">راکد</div></div>
+    </div>`;
+    // Stage breakdown
+    const stageLabels={lead:'سرنخ',qualified:'واجد شرایط',proposal:'پیشنهاد',negotiation:'مذاکره',won:'برنده',lost:'باخته'};
+    if(p.by_stage){
+      h += `<div class="muted-s" style="margin:8px 0 6px">تفکیک مرحله:</div><div class="list">`;
+      Object.entries(p.by_stage).forEach(([stage,count])=>{
+        if(count>0) h+=`<div class="muted-s">${esc(stageLabels[stage]||stage)}: ${fa(count)}</div>`;
+      });
+      h+=`</div>`;
+    }
+    if(summaryEl) summaryEl.innerHTML = h;
+
+    if(listEl){
+      let lh = '';
+      if(p.stale_deals && p.stale_deals.length){
+        lh += `<div class="muted-s" style="font-weight:700;margin:8px 0 6px">⚠️ راکد:</div>`;
+        lh += p.stale_deals.slice(0,4).map(d=>`<div class="item"><div class="t">${esc(d.title)} — ${fa(d.days_stale)} روز راکد</div></div>`).join('');
+      }
+      if(p.closing_soon && p.closing_soon.length){
+        lh += `<div class="muted-s" style="font-weight:700;margin:10px 0 6px">📅 بستن زودهنگام:</div>`;
+        lh += p.closing_soon.slice(0,4).map(d=>`<div class="item"><div class="t">${esc(d.title)} — ${fa(d.days_to_close)} روز دیگر</div></div>`).join('');
+      }
+      if(p.next_actions && p.next_actions.length){
+        lh += `<div class="muted-s" style="font-weight:700;margin:10px 0 6px">🎯 اقدام بعدی:</div>`;
+        lh += p.next_actions.slice(0,5).map(na=>`<div class="item"><div class="t">${esc(na.title)}: ${esc(na.action)}</div></div>`).join('');
+      }
+      listEl.innerHTML = lh || `<div class="muted-s">داده فروش نیست</div>`;
+    }
+
+  }catch(e){
+    if(summaryEl) summaryEl.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+
 /* ---------- navigation ---------- */
+
 
 
 const LOADERS={overview:loadOverview,tasks:()=>loadTasks(),projects:loadProjectView,

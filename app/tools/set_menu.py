@@ -40,6 +40,8 @@ BOT_COMMANDS = [
     {"command": "notify", "description": "اعلان‌ها — تسک معوق، تأیید، CRM"},
     {"command": "content", "description": "تولید محتوا — /content موضوع مقاله"},
     {"command": "seo", "description": "وضعیت سئو — Search Console + GA4"},
+    {"command": "business", "description": "تحلیل کسب‌وکار — سلامت و پیشنهاد"},
+    {"command": "sales", "description": "پایپ‌لاین فروش — معاملات و پیگیری"},
 ]
 
 

@@ -1198,6 +1198,66 @@ def ga4_report_api():
         return jsonify({"ok": False, "error": str(exc)}), 500
 
 
+# ── Business Analyst (§12) + Sales Agent (§13) ──────────────────────────────
+
+@api.get("/business/analysis")
+@api.get("/projects/<slug>/business")
+def business_analysis_api(slug: str | None = None):
+    from app.agents.business_analyst import analyze_business
+
+    project_id = None
+    if slug:
+        p = repo.get_project(slug)
+        if not p:
+            return jsonify({"ok": False, "error": "project not found"}), 404
+        project_id = p["id"]
+    else:
+        slug_q = request.args.get("project")
+        if slug_q:
+            p = repo.get_project(slug_q)
+            project_id = p["id"] if p else None
+
+    analysis = analyze_business(project_id=project_id)
+    return jsonify({"ok": True, "analysis": analysis})
+
+
+@api.get("/sales/pipeline")
+@api.get("/projects/<slug>/sales")
+def sales_pipeline_api(slug: str | None = None):
+    from app.agents.sales_agent import analyze_sales_pipeline
+
+    project_id = None
+    if slug:
+        p = repo.get_project(slug)
+        if not p:
+            return jsonify({"ok": False, "error": "project not found"}), 404
+        project_id = p["id"]
+    else:
+        slug_q = request.args.get("project")
+        if slug_q:
+            p = repo.get_project(slug_q)
+            project_id = p["id"] if p else None
+
+    pipeline = analyze_sales_pipeline(project_id=project_id)
+    return jsonify({"ok": True, "pipeline": pipeline})
+
+
+@api.post("/sales/followup-message")
+def sales_followup_message_api():
+    from app.agents.sales_agent import generate_followup_message
+
+    body = request.get_json(silent=True) or {}
+    deal_uid = body.get("deal_uid")
+    contact_uid = body.get("contact_uid")
+    tone = body.get("tone", "professional")
+
+    try:
+        msg = generate_followup_message(deal_uid=deal_uid, contact_uid=contact_uid, tone=tone)
+        return jsonify({"ok": True, "message": msg})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
 @api.get("/health")
 def health():
     return jsonify({"ok": True, "model": config.LLM_MODEL})

@@ -260,6 +260,37 @@ def content_overview() -> dict:
         return {"total": 0, "by_status": {}, "avg_word_count": 0}
 
 
+def business_overview() -> dict:
+    try:
+        from app.agents.business_analyst import analyze_business
+        a = analyze_business()
+        return {
+            "health_score": a["health_score"],
+            "health_label": a["health_label"],
+            "insights_count": len(a["insights"]),
+            "recommendations": a["recommendations"][:3],
+            "counts": a["counts"],
+        }
+    except Exception:
+        return {"health_score": 0, "health_label": "—", "insights_count": 0, "recommendations": [], "counts": {}}
+
+
+def sales_overview() -> dict:
+    try:
+        from app.agents.sales_agent import analyze_sales_pipeline
+        p = analyze_sales_pipeline()
+        return {
+            "total_deals": p["total_deals"],
+            "pipeline_value": p["pipeline_value"],
+            "weighted_value": p["weighted_value"],
+            "by_stage": p["by_stage"],
+            "stale_count": len(p["stale_deals"]),
+            "closing_soon_count": len(p["closing_soon"]),
+        }
+    except Exception:
+        return {"total_deals": 0, "pipeline_value": 0, "weighted_value": 0, "by_stage": {}, "stale_count": 0, "closing_soon_count": 0}
+
+
 def overview() -> dict:
     """Everything the dashboard needs, in one round-trip."""
     counts = {}
@@ -301,4 +332,6 @@ def overview() -> dict:
         "crm": crm_overview(),
         "notifications": notifications_summary(),
         "content": content_overview(),
+        "business": business_overview(),
+        "sales": sales_overview(),
     }
