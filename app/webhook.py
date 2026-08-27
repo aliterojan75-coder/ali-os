@@ -32,7 +32,11 @@ master = MasterAgent()
 
 
 def create_app() -> Flask:
-    app = Flask(__name__)
+    # static_folder=None disables Flask's built-in /static route, which would
+    # otherwise shadow the Mini App's own asset route (it points at
+    # app/static, a directory this project does not use). The dashboard serves
+    # its assets from app/miniapp/static via the spa blueprint instead.
+    app = Flask(__name__, static_folder=None)
 
     # Initialise DB + seed on startup (idempotent).
     seed.seed_all()

@@ -83,6 +83,14 @@ def stats():
     }})
 
 
+@api.get("/analytics")
+def analytics():
+    """Everything the dashboard charts need, in a single round-trip."""
+    from app.miniapp import analytics as an
+
+    return jsonify({"ok": True, "data": an.overview()})
+
+
 @api.get("/projects")
 def projects():
     items = _rows(repo.list_projects())

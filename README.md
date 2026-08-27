@@ -41,6 +41,13 @@ Telegram → Webhook → Flask/Gunicorn → Master Agent → LLM + Memory + Task
   - دستور `/connections` + 📖 [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md)
 - ✅ **WordPress Agent (§3)** — پیش‌نویس/ویرایش 🟡، انتشار/حذف 🔴، فیلدهای Rank Math،
   و `content_index()` برای جلوگیری از Cannibalization
+- ✅ **بازطراحی کامل داشبورد (UI/UX)** — نمودار، انیمیشن، و ناوبری ۶ تبی
+  - نمودار خطی روند ۱۴ روزه (ایجاد در برابر انجام)، دونات وضعیت، گیج KPI،
+    نوار اولویت، هیت‌مپ فعالیت ۸ هفته، نوار انباشته‌ی تأییدها
+  - **همه‌ی نمودارها SVG درون‌خطی‌اند — بدون CDN و بدون کتابخانه‌ی بیرونی**،
+    چون داشبورد باید روی شبکه‌هایی که CDN را بلاک می‌کنند هم کامل بالا بیاید
+  - اسکلت لودینگ، بازخورد لمسی (Haptic)، شیت پرونده‌ی پروژه، بج شمارنده روی تب تأیید
+  - اعداد فارسی در کل رابط، RTL کامل، احترام به `prefers-reduced-motion`
 - ⬜ CRM پایه، PM Agent، Content Agent
 
 ## دستورات تلگرام
@@ -57,7 +64,11 @@ Telegram → Webhook → Flask/Gunicorn → Master Agent → LLM + Memory + Task
 ## تست
 
 ```bash
-python -m pytest tests -q      # ۵۲ تست — بدون شبکه، بدون تلگرام واقعی
+python -m pytest tests -q      # ۶۶ تست پایتون — بدون شبکه، بدون تلگرام واقعی
+
+# تست رابط کاربری (نیازمند سرور در حال اجرا + npm install jsdom)
+node tests/ui/dashboard.test.mjs   # ۳۰ بررسی رندر واقعی نمودارها
+node tests/ui/fallback.test.mjs    # داشبورد بدون charts.js هم باید کار کند
 ```
 
 ## پنل مدیریت (Mini App)
