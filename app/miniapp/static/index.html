@@ -183,8 +183,8 @@
     <div class="brand">
       <div class="logo">A</div>
       <div>
-        <h1>Ali OS</h1>
-        <small>Chief of Staff هوش مصنوعی</small>
+        <h1>دستیار علی</h1>
+        <small> هوش مصنوعی نت تووا</small>
       </div>
     </div>
     <span class="pill"><span class="dot"></span> <span id="conn">در حال اتصال…</span></span>
@@ -306,10 +306,53 @@
 /* ---------- Telegram bridge ----------
    کلاینت‌های جدید تلگرام خودشان telegram-web-app.js را قبل از اجرای اسکریپت‌های
    صفحه تزریق می‌کنند؛ در آن حالت هیچ درخواست شبکه‌ای به telegram.org لازم نیست
-   (این دامنه در برخی شبکه‌ها در دسترس نیست). اگر SDK موجود نبود (کلاینت قدیمی یا
-   مرورگر معمولی)، نسخه‌ی رسمی به‌صورت async لود می‌شود و اگر نتوانست، صفحه بدون
-   آن بالا می‌آید و پیام روشن نشان می‌دهد. */
-let tg = window.Telegram && window.Telegram.WebApp;
+   (این دامنه در برخی شبکه‌ها در دسترس نیست). اگر SDK تزریق نشده بود، initData
+   مستقیماً از پارامتر tgWebAppData داخل URL خوانده می‌شود — دقیقاً همان کاری که
+   SDK رسمی می‌کند — پس احراز هویت به هیچ فایل خارجی وابسته نیست. */
+function extractInitDataFromUrl(){
+  try{
+    var parts = [(location.hash||'').replace(/^#/,''), (location.search||'').replace(/^\?/,'')];
+    for (var p=0; p<parts.length; p++){
+      var q = parts[p];
+      if (!q || q.indexOf('tgWebAppData=')===-1) continue;
+      var start = q.indexOf('tgWebAppData=') + 'tgWebAppData='.length;
+      var rest = q.substring(start);
+      // مرز بعدی: بقیه‌ی پارامترهایی که تلگرام به URL اضافه می‌کند همگی
+      // «tgWebApp» شروع می‌شوند (tgWebAppVersion، tgWebAppPlatform و…).
+      // اگر مقدار encode نشده باشد، &های داخل خود initData نباید بشکنند.
+      var boundary = rest.search(/&tgWebApp[A-Za-z_]*=/);
+      var raw = boundary===-1 ? rest : rest.substring(0, boundary);
+      var val;
+      try { val = decodeURIComponent(raw); } catch(e){ val = raw; }
+      if (val.indexOf('hash=')===-1 && raw.indexOf('hash=')!==-1) val = raw;
+      if (val.indexOf('hash=')!==-1) return val;
+    }
+  }catch(e){}
+  return '';
+}
+function makeTgFromUrl(){
+  var initData = extractInitDataFromUrl();
+  if (!initData) return null;
+  // فراخوانی‌های بومی آماده‌سازی/بزرگ‌نمایی (در صورت وجود bridge کلاینت)
+  var postEvent = function(event, data){
+    try{
+      if (window.TelegramWebviewProxy !== undefined){ window.TelegramWebviewProxy.postEvent(event, JSON.stringify(data||{})); }
+      else if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.telegramWebviewProxy){
+        window.webkit.messageHandlers.telegramWebviewProxy.postMessage(JSON.stringify({eventType:event, eventData:data||{}}));
+      } else if (window.parent && window.parent !== window){ window.parent.postMessage(JSON.stringify({eventType:event, eventData:data||{}}), '*'); }
+    }catch(e){}
+  };
+  var themeParams = {};
+  try{
+    var m = ((location.hash||'')+(location.search||'')).match(/tgWebAppTheme=([^&]+)/);
+    if (m){ themeParams = JSON.parse(decodeURIComponent(m[1])) || {}; }
+  }catch(e){}
+  return { initData: initData, initDataUnsafe: {}, version: '6.0', platform: 'unknown',
+           themeParams: themeParams, colorScheme: themeParams.color_scheme || 'dark',
+           ready: function(){ postEvent('web_app_ready', {}); },
+           expand: function(){ postEvent('web_app_expand', {}); } };
+}
+let tg = (window.Telegram && window.Telegram.WebApp) || makeTgFromUrl();
 let INIT_DATA = '';
 function initTg(){
   if (tg) {
@@ -556,7 +599,7 @@ async function init(){
     _everFailed = true;
     $('#conn').textContent = 'قطع';
     const hint = (e.message==='unauthorized' || e.message==='HTTP 401')
-      ? 'اگر Mini App را خارج از تلگرام باز کرده‌ای، باید از داخل تلگرام اجرا شود.'
+      ? 'این پنل باید از داخل تلگرام باز شود (دکمه‌ی منوی بات). اگر از داخل تلگرام باز کرده‌ای و این خطا را می‌بینی، احتمالاً نسخه‌ی تلگرام قدیمی/غیررسمی است؛ تلگرام را به آخرین نسخه‌ی رسمی به‌روز کن.'
       : 'سرور رایگان بعد از بی‌کاری می‌خوابد و بیدار شدنش تا یک دقیقه طول می‌کشد. ' +
         'همچنین توجه کن پروکسی تلگرام فقط ترافیک خود تلگرام را عبور می‌دهد و صفحات وب (این پنل) از آن رد نمی‌شوند؛ ' +
         'برای باز شدن پنل، اینترنت دستگاه باید به ali-os.onrender.com دسترسی داشته باشد.';
@@ -575,8 +618,9 @@ function boot(){
 }
 if (tg) boot();
 else {
-  // کلاینت قدیمی/مرورگر: SDK رسمی async لود می‌شود؛ اگر دامنه در دسترس نبود،
-  // بدون آن ادامه می‌دهیم تا پیام خطا دیده شود (صفحه هنگ نمی‌کند).
+  // نه SDK تزریق شده و نه tgWebAppData در URL بود (مرورگر معمولی): SDK رسمی
+  // async امتحان می‌شود؛ اگر دامنه در دسترس نبود، بدون آن ادامه می‌دهیم تا
+  // پیام خطای روشن دیده شود (صفحه هنگ نمی‌کند).
   const sdk = document.createElement('script');
   sdk.src = 'https://telegram.org/js/telegram-web-app.js';
   sdk.onload = function(){ tg = window.Telegram && window.Telegram.WebApp; boot(); };
