@@ -47,3 +47,7 @@ services:
       # Generate once with: python -m app.tools.gen_key
       - key: ENCRYPTION_KEY
         sync: false
+      # P0 ownership gate: comma-separated Telegram chat ids allowed to command the bot.
+      # Discover yours by messaging the bot: /whoami. Until set, the bot answers ANYONE.
+      - key: TELEGRAM_ADMIN_CHAT_ID
+        sync: false

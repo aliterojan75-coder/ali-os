@@ -38,6 +38,7 @@ BOT_COMMANDS = [
     {"command": "morning", "description": "گزارش صبحگاهی با تقویم شمسی"},
     {"command": "crm", "description": "مخاطبان و معاملات CRM"},
     {"command": "notify", "description": "اعلان‌ها — تسک معوق، تأیید، CRM"},
+    {"command": "whoami", "description": "شناسه چت تلگرام شما (برای TELEGRAM_ADMIN_CHAT_ID)"},
     {"command": "content", "description": "تولید محتوا — /content موضوع مقاله"},
     {"command": "seo", "description": "وضعیت سئو — Search Console + GA4"},
     {"command": "business", "description": "تحلیل کسب‌وکار — سلامت و پیشنهاد"},

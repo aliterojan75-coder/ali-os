@@ -40,14 +40,58 @@ class GoogleAPIError(RuntimeError):
     pass
 
 
+# ── Caches ───────────────────────────────────────────────────────────────────
+# Google access tokens are valid ~60 min. Refreshing them on EVERY API call was
+# one extra RTT per request (×10 calls per dashboard load) — cached here with a
+# 5-min safety margin. TTLs are env-overridable for tests.
+import os as _os
+import threading as _threading
+import hashlib as _hashlib
+
+_TOKEN_CACHE: dict[str, tuple[float, str]] = {}
+_TOKEN_TTL = int(_os.environ.get("GOOGLE_TOKEN_CACHE_TTL", 55 * 60))
+
+# GSC data lags 2-3 days by nature; re-hitting Google on every panel open was
+# pure latency. get_project_google_data() results are memoized per property.
+_OVERVIEW_CACHE: dict[str, tuple[float, dict]] = {}
+_OVERVIEW_TTL = int(_os.environ.get("GOOGLE_DATA_CACHE_TTL", 30 * 60))
+_CACHE_LOCK = _threading.Lock()
+_CACHE_MAX = 32
+
+
+def _cache_put(store: dict, key: str, value, ttl: int) -> None:
+    with _CACHE_LOCK:
+        if len(store) >= _CACHE_MAX:  # simple eviction guard for the free tier
+            store.pop(next(iter(store)), None)
+        store[key] = (_time_now() + ttl, value)
+
+
+def _time_now() -> float:
+    import time as _t
+    return _t.time()
+
+
+def cache_clear() -> None:
+    """Drop cached tokens + overviews (used after re-saving Google credentials, and by tests)."""
+    with _CACHE_LOCK:
+        _TOKEN_CACHE.clear()
+        _OVERVIEW_CACHE.clear()
+
+
 def get_access_token(creds: dict) -> str:
-    """Exchange refresh token for access token."""
+    """Exchange refresh token for access token (cached — see _TOKEN_CACHE)."""
     client_id = creds.get("client_id") or ""
     client_secret = creds.get("client_secret") or ""
     refresh_token = creds.get("refresh_token") or ""
 
     if not (client_id and client_secret and refresh_token):
         raise GoogleAuthError("اطلاعات OAuth ناقص است — client_id, client_secret, refresh_token لازم است")
+
+    token_key = f"{client_id}:{_hashlib.sha256(refresh_token.encode()).hexdigest()[:16]}"
+    with _CACHE_LOCK:
+        hit = _TOKEN_CACHE.get(token_key)
+    if hit and hit[0] > _time_now():
+        return hit[1]
 
     try:
         resp = requests.post(
@@ -75,6 +119,7 @@ def get_access_token(creds: dict) -> str:
     access_token = data.get("access_token")
     if not access_token:
         raise GoogleAuthError("پاسخ گوگل access_token نداشت")
+    _cache_put(_TOKEN_CACHE, token_key, access_token, _TOKEN_TTL)
     return access_token
 
 
@@ -324,6 +369,62 @@ def gsc_daily_trend(
         return {"dates": [], "clicks": [], "impressions": [], "ctr": [], "position": []}
 
 
+def gsc_cannibalization(
+    creds: dict,
+    property_url: str,
+    *,
+    days: int = 28,
+    min_impressions: int = 50,
+    limit: int = 10,
+) -> list[dict]:
+    """Queries that Google shows for TWO+ of your pages — real cannibalization.
+
+    One GSC call with dimensions=["query","page"] grouped per query. This is the
+    ground truth; the Jaccard-on-titles check is only a fallback for when GSC is
+    not connected or the property is too young.
+    """
+    end_dt = datetime.now(timezone.utc) - timedelta(days=3)
+    start_dt = end_dt - timedelta(days=days)
+    data = gsc_query(
+        creds,
+        property_url,
+        start_date=start_dt.strftime("%Y-%m-%d"),
+        end_date=end_dt.strftime("%Y-%m-%d"),
+        dimensions=["query", "page"],
+        row_limit=2500,
+    )
+
+    by_query: dict[str, dict] = {}
+    for r in data.get("rows", []):
+        keys = r.get("keys", [])
+        if len(keys) < 2:
+            continue
+        query, page = keys[0], keys[1]
+        e = by_query.setdefault(query, {"query": query, "impressions": 0, "clicks": 0, "pages": {}})
+        e["impressions"] += int(r.get("impressions", 0))
+        e["clicks"] += int(r.get("clicks", 0))
+        p = e["pages"].setdefault(page, {"page": page, "impressions": 0, "clicks": 0, "best_position": None})
+        p["impressions"] += int(r.get("impressions", 0))
+        p["clicks"] += int(r.get("clicks", 0))
+        pos = float(r.get("position", 0) or 0)
+        if pos and (p["best_position"] is None or pos < p["best_position"]):
+            p["best_position"] = round(pos, 1)
+
+    out: list[dict] = []
+    for e in by_query.values():
+        if len(e["pages"]) >= 2 and e["impressions"] >= min_impressions:
+            pages = sorted(e["pages"].values(), key=lambda x: -x["impressions"])
+            out.append({
+                "query": e["query"],
+                "impressions": e["impressions"],
+                "clicks": e["clicks"],
+                "pages": pages[:4],
+                "suggestion": "ادغام محتوا یا کانالیزه کردن با canonical/internal link بین این صفحات",
+            })
+    out.sort(key=lambda x: -x["impressions"])
+    return out[:limit]
+
+
 def gsc_device_breakdown(
     creds: dict,
     property_url: str,
@@ -422,8 +523,23 @@ def get_project_google_data(
     gsc_property: str | None,
     ga4_creds: dict | None,
     ga4_property: str | None,
+    force_refresh: bool = False,
 ) -> dict:
-    """Fetch combined Google data for a project — for dossier / morning report."""
+    """Fetch combined Google data for a project — for dossier / morning report.
+
+    Memoized per property pair (default 30 min): GSC data lags 2-3 days anyway,
+    and hitting ~10 Google endpoints synchronously on a 1-worker free host made
+    the dashboard crawl. Use `fresh=1` (or force_refresh) on the manual sync button.
+    """
+    cache_key = f"{gsc_property or ''}|{ga4_property or ''}"
+    if not force_refresh:
+        with _CACHE_LOCK:
+            hit = _OVERVIEW_CACHE.get(cache_key)
+        if hit and hit[0] > _time_now():
+            out = dict(hit[1])
+            out["cached"] = True
+            return out
+
     result: dict[str, Any] = {
         "gsc": None,
         "ga4": None,
@@ -490,4 +606,7 @@ def get_project_google_data(
             result["errors"].append(f"GA4: {exc}")
             log.warning("google.ga4_fetch_failed", extra={"extra_fields": {"error": str(exc)}})
 
+    # Cache only when at least one source succeeded — never poison the cache with total failures.
+    if result["gsc"] or result["ga4"]:
+        _cache_put(_OVERVIEW_CACHE, cache_key, result, _OVERVIEW_TTL)
     return result

@@ -48,6 +48,24 @@ class Config:
     TURSO_DATABASE_URL = os.environ.get("TURSO_DATABASE_URL", "")
     TURSO_AUTH_TOKEN = os.environ.get("TURSO_AUTH_TOKEN", "")
 
+    # Ownership gate (P0 security): only these Telegram chat ids may command the bot.
+    # Comma-separated for multiple owners. If UNSET → bot stays open (backward
+    # compatible) and a warning is logged at startup — set it on Render!
+    # Find your chat id by messaging the bot: /whoami
+    TELEGRAM_ADMIN_CHAT_ID = os.environ.get("TELEGRAM_ADMIN_CHAT_ID", "") or os.environ.get(
+        "TELEGRAM_ADMIN_CHAT_IDS", ""
+    )
+
+    def admin_chat_ids(self) -> set[int]:
+        # instance method (not classmethod): config is an instance and tests/ops
+        # override TELEGRAM_ADMIN_CHAT_ID on it at runtime.
+        out: set[int] = set()
+        for part in self.TELEGRAM_ADMIN_CHAT_ID.replace("،", ",").replace("؛", ",").replace(";", ",").split(","):
+            part = part.strip()
+            if part.lstrip("-").isdigit():
+                out.add(int(part))
+        return out
+
     # Cron / Automation (§16)
     CRON_SECRET = os.environ.get("CRON_SECRET", os.environ.get("WEBHOOK_SECRET", "ali_os_wh_9f3a7c2e8b1d"))
     # Content Agent
