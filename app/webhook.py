@@ -75,6 +75,40 @@ def create_app() -> Flask:
             "model": config.LLM_MODEL,
         })
 
+    @app.get("/internal/cron")
+    @app.post("/internal/cron")
+    def internal_cron():
+        """Secure endpoint for cron-job.org / GitHub Actions to trigger daily jobs (§16).
+
+        Query params:
+          secret=...  must match CRON_SECRET (defaults to WEBHOOK_SECRET)
+          job=morning|notifications|daily|all  (default: daily)
+          chat_id=... optional override
+        """
+        secret = request.args.get("secret") or request.headers.get("X-Cron-Secret") or ""
+        expected = config.CRON_SECRET or config.WEBHOOK_SECRET
+        if secret != expected:
+            log.warning("cron.unauthorized", extra={"extra_fields": {}})
+            return jsonify({"ok": False, "error": "unauthorized"}), 401
+
+        job = (request.args.get("job") or "daily").lower()
+        chat_id = request.args.get("chat_id")
+        try:
+            chat_id = int(chat_id) if chat_id else None
+        except ValueError:
+            chat_id = None
+
+        from app.automation.cron import run_morning_job, run_notifications_job, run_daily_jobs
+
+        if job in ("morning", "report"):
+            result = run_morning_job(chat_id=chat_id)
+        elif job in ("notifications", "notify", "notif"):
+            result = run_notifications_job(chat_id=chat_id)
+        else:
+            result = run_daily_jobs(chat_id=chat_id)
+
+        return jsonify(result)
+
     @app.post("/webhook")
     def webhook():
         # Authenticate that the request really comes from Telegram (§48).

@@ -85,6 +85,15 @@ class MasterAgent:
             return {"intent": "crm_overview", "confidence": 0.99, "project_slug": proj}
         if low in ("/notify", "/notifications", "اعلان‌ها", "اعلانها", "نوتیفیکیشن", "هشدارها"):
             return {"intent": "list_notifications", "confidence": 0.99, "project_slug": None}
+        if low in ("/content", "محتوا", "مقاله", "مقالات", "/drafts"):
+            parts = text.strip().split(maxsplit=1)
+            proj = parts[1].strip() if len(parts) > 1 else None
+            return {"intent": "content_overview", "confidence": 0.99, "project_slug": proj}
+        if low.startswith("/content") or low.startswith("مقاله بنویس") or low.startswith("محتوا بنویس"):
+            # /content <topic> or natural language
+            rest = text.strip().split(maxsplit=1)
+            topic = rest[1].strip() if len(rest) > 1 else None
+            return {"intent": "generate_content", "confidence": 0.99, "project_slug": None, "topic": topic}
         if low.startswith("/dossier") or low.startswith("پرونده"):
             rest = text.strip().split(maxsplit=1)
             return {
@@ -97,6 +106,10 @@ class MasterAgent:
             return {"intent": "morning_report", "confidence": 0.95, "project_slug": None}
         if any(kw in low for kw in ["لیست مخاطبان", "مخاطب جدید", "crm contact"]):
             return {"intent": "crm_overview", "confidence": 0.85, "project_slug": None}
+        if any(kw in low for kw in ["مقاله بنویس", "محتوا بنویس", "content generate", "پیش‌نویس محتوا", "تولید محتوا"]):
+            return {"intent": "generate_content", "confidence": 0.9, "project_slug": None, "topic": text}
+        if any(kw in low for kw in ["لیست مقالات", "پیش‌نویس‌ها", "content drafts"]):
+            return {"intent": "content_overview", "confidence": 0.85, "project_slug": None}
         if any(kw in low for kw in ["اعلان", "نوتیف", "هشدار"]):
             # Could be notification request
             if len(low) < 30:
@@ -147,6 +160,11 @@ class MasterAgent:
             return self._action_crm_overview(project)
         if intent == "list_notifications":
             return self._action_list_notifications(user_id, project)
+        if intent == "content_overview":
+            return self._action_content_overview(project)
+        if intent == "generate_content":
+            topic = route.get("topic") or route.get("task_title") or msg.text
+            return self._action_generate_content(project, user_id, msg.chat_id, topic)
         if intent == "help":
             return self._help_text()
 
@@ -508,6 +526,74 @@ class MasterAgent:
 
         lines.append("\n_برای دیدن جزئیات و مدیریت، داشبورد → تب اعلان‌ها را باز کن._")
         return "\n".join(lines)
+
+    # ── Content Agent (§9) ─────────────────────────────────────────────────
+    def _action_content_overview(self, project) -> str:
+        from app.content.repository import content_stats, list_drafts
+
+        pid = project["id"] if project else None
+        stats = content_stats(project_id=pid)
+        drafts = list_drafts(project_id=pid, limit=10)
+
+        proj_label = project["name"] if project else "همه پروژه‌ها"
+        lines = [f"📝 *محتوا — {proj_label}*", ""]
+        lines.append(f"📄 کل پیش‌نویس‌ها: {stats['total']} — میانگین {stats['avg_word_count']} کلمه")
+        for st, cnt in stats["by_status"].items():
+            if cnt:
+                label = {"draft": "پیش‌نویس", "pending_approval": "منتظر تأیید", "approved": "تأییدشده", "published": "منتشرشده", "rejected": "ردشده", "archived": "آرشیو"}.get(st, st)
+                lines.append(f"  • {label}: {cnt}")
+
+        if drafts:
+            lines.append(f"\n📝 آخرین پیش‌نویس‌ها:")
+            for d in drafts[:6]:
+                lines.append(f"  • {d['title']} — {d['status']} — {d['word_count']} کلمه — {d['seo_score'] or '—'} امتیاز سئو")
+
+        lines.append("\n_برای تولید مقاله بگو: «مقاله بنویس درباره فواید گلاب برای گیاهکده» یا از داشبورد._")
+        return "\n".join(lines)
+
+    def _action_generate_content(self, project, user_id: int, chat_id: int, topic: str) -> str:
+        from app import approvals
+
+        # Clean topic from command prefix
+        clean_topic = topic or ""
+        for prefix in ["/content", "مقاله بنویس", "محتوا بنویس", "تولید محتوا", "پیش‌نویس محتوا"]:
+            if clean_topic.lower().startswith(prefix):
+                clean_topic = clean_topic[len(prefix):].strip(" :—-")
+        if not clean_topic:
+            return "موضوع مقاله را بگو. مثلاً: «مقاله بنویس درباره فواید عرق نعناع برای گیاهکده»"
+
+        # Check project from topic if mentions
+        proj_id = project["id"] if project else None
+        # Simple heuristic: if topic contains project name, resolve
+        low = clean_topic.lower()
+        if not project:
+            for slug, name in [("giahkade", "گیاهکده"), ("esqom", "امداد سرویس قم"), ("cropexport", "crop"), ("netnova", "نت نوا")]:
+                if name in low or slug in low:
+                    p = repo.get_project(slug)
+                    if p:
+                        proj_id = p["id"]
+                        break
+
+        res = approvals.request_action(
+            action_type="content.generate",
+            title=f"تولید محتوا: {clean_topic[:50]}",
+            summary=f"موضوع: {clean_topic}",
+            payload={
+                "topic": clean_topic,
+                "project_id": proj_id,
+                "created_by": user_id,
+                "target_words": 2000,
+            },
+            requested_by=user_id,
+            project_id=proj_id,
+            chat_id=chat_id,
+            agent="master",
+        )
+
+        if res.executed:
+            return f"✅ {res.result}\n\nبرای دیدن پیش‌نویس، داشبورد → تب محتوا یا دستور /content را بزن."
+        else:
+            return f"{res.message}\nموضوع: {clean_topic} — کارت تأیید در چت ارسال شد. بعد از تأیید، مقاله تولید می‌شود."
 
     # ── Chat with full context ─────────────────────────────────────────────
     def _action_chat(self, msg: IncomingMessage, convo_id: int, project) -> str:

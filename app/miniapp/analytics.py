@@ -252,6 +252,14 @@ def notifications_summary() -> dict:
         return {"total": 0, "by_type": {}, "by_severity": {}, "high_priority": 0, "persisted_unread": 0, "has_critical": False}
 
 
+def content_overview() -> dict:
+    try:
+        from app.content.repository import content_stats
+        return content_stats()
+    except Exception:
+        return {"total": 0, "by_status": {}, "avg_word_count": 0}
+
+
 def overview() -> dict:
     """Everything the dashboard needs, in one round-trip."""
     counts = {}
@@ -292,4 +300,5 @@ def overview() -> dict:
         "kpis": kpi_overview(),
         "crm": crm_overview(),
         "notifications": notifications_summary(),
+        "content": content_overview(),
     }

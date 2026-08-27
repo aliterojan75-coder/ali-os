@@ -347,3 +347,156 @@ def _crm_delete_deal(payload: dict, ctx: dict) -> str:
         raise ValueError(f"معامله یافت نشد: {uid}")
     return f"معامله حذف شد: {uid}"
 
+
+
+# ── Content Agent (§9) ────────────────────────────────────────────────────────
+
+@executor("content.draft_create")
+def _content_draft_create(payload: dict, ctx: dict) -> str:
+    from app.content.repository import create_draft
+    topic = (payload.get("topic") or payload.get("title") or "").strip()
+    title = (payload.get("title") or topic or "پیش‌نویس محتوا").strip()
+    if not topic:
+        raise ValueError("topic لازم است")
+    draft = create_draft(
+        project_id=payload.get("project_id") or ctx.get("project_id"),
+        topic=topic,
+        title=title,
+        slug_en=payload.get("slug_en"),
+        outline=payload.get("outline"),
+        content=payload.get("content"),
+        excerpt=payload.get("excerpt"),
+        faq=payload.get("faq"),
+        image_prompt=payload.get("image_prompt"),
+        cta=payload.get("cta"),
+        meta_title=payload.get("meta_title"),
+        meta_description=payload.get("meta_description"),
+        focus_keyword=payload.get("focus_keyword"),
+        canonical_url=payload.get("canonical_url"),
+        word_count=int(payload.get("word_count") or 0),
+        status=payload.get("status", "draft"),
+        created_by=payload.get("created_by") or ctx.get("requested_by"),
+    )
+    return f"پیش‌نویس محتوا ثبت شد: {draft['draft_uid']}"
+
+
+@executor("content.draft_update")
+def _content_draft_update(payload: dict, ctx: dict) -> str:
+    from app.content.repository import update_draft
+    uid = payload.get("draft_uid")
+    if not uid:
+        raise ValueError("draft_uid لازم است")
+    fields = {k: v for k, v in payload.items() if k != "draft_uid"}
+    if not fields:
+        raise ValueError("هیچ فیلدی داده نشد")
+    row = update_draft(uid, **fields)
+    if not row:
+        raise ValueError(f"پیش‌نویس یافت نشد: {uid}")
+    return f"پیش‌نویس {uid} به‌روزرسانی شد"
+
+
+@executor("content.delete_draft")
+def _content_delete_draft(payload: dict, ctx: dict) -> str:
+    from app.content.repository import delete_draft
+    uid = payload.get("draft_uid")
+    if not uid:
+        raise ValueError("draft_uid لازم است")
+    ok = delete_draft(uid)
+    if not ok:
+        raise ValueError(f"پیش‌نویس یافت نشد: {uid}")
+    return f"پیش‌نویس {uid} حذف شد"
+
+
+@executor("content.generate")
+def _content_generate(payload: dict, ctx: dict) -> str:
+    from app.agents.content_agent import generate_article
+    topic = (payload.get("topic") or "").strip()
+    if not topic:
+        raise ValueError("topic لازم است")
+    result = generate_article(
+        topic=topic,
+        project_id=payload.get("project_id") or ctx.get("project_id"),
+        created_by=payload.get("created_by") or ctx.get("requested_by"),
+        target_words=int(payload.get("target_words") or 2000),
+    )
+    draft = result["draft"]
+    cannibal = result["cannibalization"]
+    msg = f"مقاله تولید شد: {draft['draft_uid']} — {draft['title']} ({draft['word_count']} کلمه)"
+    if cannibal:
+        msg += f" — ⚠️ {len(cannibal)} مورد مشابه یافت شد"
+    return msg
+
+
+@executor("content.publish_draft")
+def _content_publish_draft(payload: dict, ctx: dict) -> str:
+    from app.content.repository import get_draft, update_draft
+    uid = payload.get("draft_uid")
+    if not uid:
+        raise ValueError("draft_uid لازم است")
+    draft = get_draft(uid)
+    if not draft:
+        raise ValueError(f"پیش‌نویس یافت نشد: {uid}")
+
+    # Create WordPress draft via internal call (will go through approval again? No, we are already in approved context)
+    # For MVP, we directly call wordpress agent's internal function if credentials exist, else just mark approved
+    try:
+        from app.agents.wordpress import _request, _build_body
+        project_id = draft["project_id"]
+        body = _build_body({
+            "title": draft["title"],
+            "content": draft["content"],
+            "slug": draft["slug_en"],
+            "excerpt": draft["excerpt"],
+            "seo_title": draft["meta_title"],
+            "seo_description": draft["meta_description"],
+            "focus_keyword": draft["focus_keyword"],
+            "status": "draft",
+        })
+        post = _request("POST", project_id, "posts", json=body)
+        update_draft(uid, status="approved", wordpress_post_id=post.get("id"), wordpress_url=post.get("link"))
+        return f"پیش‌نویس وردپرس ساخته شد: {post.get('link') or post.get('id')}"
+    except Exception as exc:
+        # If WordPress not connected, just mark approved
+        update_draft(uid, status="approved")
+        return f"تأیید شد (وردپرس متصل نیست): {exc}"
+
+
+@executor("content.publish")
+def _content_publish(payload: dict, ctx: dict) -> str:
+    from app.content.repository import get_draft, update_draft
+    uid = payload.get("draft_uid")
+    if not uid:
+        raise ValueError("draft_uid لازم است")
+    draft = get_draft(uid)
+    if not draft:
+        raise ValueError(f"پیش‌نویس یافت نشد: {uid}")
+    try:
+        from app.agents.wordpress import _request
+        project_id = draft["project_id"]
+        post_id = draft["wordpress_post_id"]
+        if post_id:
+            post = _request("POST", project_id, f"posts/{post_id}", json={"status": "publish"})
+        else:
+            from app.agents.wordpress import _build_body
+            body = _build_body({
+                "title": draft["title"],
+                "content": draft["content"],
+                "slug": draft["slug_en"],
+                "status": "publish",
+            })
+            post = _request("POST", project_id, "posts", json=body)
+        update_draft(uid, status="published", wordpress_post_id=post.get("id"), wordpress_url=post.get("link"))
+        return f"منتشر شد: {post.get('link') or post.get('id')}"
+    except Exception as exc:
+        raise ValueError(f"انتشار ناموفق: {exc}")
+
+
+@executor("seo.audit")
+def _seo_audit(payload: dict, ctx: dict) -> str:
+    from app.agents.seo_agent import audit_content
+    uid = payload.get("draft_uid")
+    if not uid:
+        raise ValueError("draft_uid لازم است")
+    result = audit_content(uid)
+    return f"سئو امتیاز {result['score']} — {len(result['issues'])} مشکل"
+

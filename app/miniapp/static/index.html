@@ -160,7 +160,7 @@
     background:rgba(10,14,24,.82);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
     border-top:1px solid var(--line);
     padding:7px 8px calc(7px + env(safe-area-inset-bottom));
-    display:grid;grid-template-columns:repeat(8,1fr);gap:2px;overflow-x:auto}
+    display:grid;grid-template-columns:repeat(9,1fr);gap:2px;overflow-x:auto}
   nav.tabs button{background:transparent;border:0;color:var(--muted-2);position:relative;
     font-family:inherit;font-size:9.5px;font-weight:700;padding:7px 2px;border-radius:14px;
     display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;
@@ -423,6 +423,26 @@
     </div>
   </section>
 
+  <!-- ═══ CONTENT ═══ -->
+  <section class="view" id="v-content">
+    <div class="card">
+      <h2><span class="ico">📝</span> محتوا — پیش‌نویس‌ها <span class="right" id="contentCount"></span></h2>
+      <div class="stats" id="contentStats"></div>
+      <div class="sep"></div>
+      <div class="seg" id="contentSeg">
+        <button class="on" data-f="all">همه</button>
+        <button data-f="draft">پیش‌نویس</button>
+        <button data-f="pending_approval">منتظر تأیید</button>
+        <button data-f="published">منتشرشده</button>
+      </div>
+      <div class="list" id="contentList"></div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn sm" style="flex:1" onclick="openContentGenerateSheet()">✨ تولید مقاله جدید</button>
+        <button class="btn sm ghost" style="flex:1" onclick="loadContent()">🔄 بروزرسانی</button>
+      </div>
+    </div>
+  </section>
+
   <!-- ═══ NOTIFICATIONS ═══ -->
   <section class="view" id="v-notifications">
     <div class="card">
@@ -608,6 +628,37 @@
   </div>
 </div>
 
+<!-- Content Generate Sheet -->
+<div class="sheet-back" id="contentGenBack">
+  <div class="sheet">
+    <div class="sheet-grip"></div>
+    <div class="sheet-h">
+      <strong>✨ تولید مقاله جدید</strong>
+      <button class="x" id="contentGenClose">✕</button>
+    </div>
+    <div id="contentGenBody">
+      <div class="field"><label>موضوع مقاله *</label><input id="cg-topic" placeholder="مثلاً: فواید گلاب برای پوست" /></div>
+      <div class="field"><label>پروژه</label><select id="cg-project"><option value="">بدون پروژه</option></select></div>
+      <div class="field"><label>تعداد کلمات هدف</label><input id="cg-words" type="number" value="2000" /></div>
+      <div class="field"><label>بررسی Cannibalization</label><select id="cg-cannibal"><option value="1">بله</option><option value="0">خیر</option></select></div>
+      <div class="muted-s" style="margin:8px 0">موضوع پس از تأیید (🟡) توسط Content Agent تولید می‌شود. سپس می‌توانی آن را به وردپرس به‌عنوان پیش‌نویس بفرستی (🟡) و در نهایت منتشر کنی (🔴).</div>
+      <div style="display:flex;gap:10px"><button class="btn" id="cg-save" style="flex:1">تولید محتوا</button><button class="btn ghost" id="cg-cancel">انصراف</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- Content Detail Sheet -->
+<div class="sheet-back" id="contentDetailBack">
+  <div class="sheet">
+    <div class="sheet-grip"></div>
+    <div class="sheet-h">
+      <strong id="contentDetailTitle">پیش‌نویس محتوا</strong>
+      <button class="x" id="contentDetailClose">✕</button>
+    </div>
+    <div id="contentDetailBody"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <nav class="tabs">
@@ -615,6 +666,7 @@
   <button data-v="tasks"><span class="ti">✓</span>تسک‌ها</button>
   <button data-v="projects"><span class="ti">▦</span>پروژه‌ها</button>
   <button data-v="crm"><span class="ti">👥</span>CRM</button>
+  <button data-v="content"><span class="ti">📝</span>محتوا</button>
   <button data-v="approvals"><span class="ti">🔐</span>تأیید</button>
   <button data-v="notifications"><span class="ti">🔔</span>اعلان</button>
   <button data-v="conn"><span class="ti">🔌</span>اتصال</button>
@@ -921,6 +973,19 @@ function updateBadges(){
       crmBtn.appendChild(b);
     }
   }
+  // Content pending
+  const contentPending = ANALYTICS.content ? (ANALYTICS.content.by_status.pending_approval || 0) : 0;
+  const contentBtn = document.querySelector('nav.tabs button[data-v="content"]');
+  if(contentBtn){
+    const old = contentBtn.querySelector('.nb');
+    if(old) old.remove();
+    if(contentPending>0){
+      const b=document.createElement('span');
+      b.className='nb'; b.textContent=fa(contentPending);
+      b.style.background='var(--brand-2)';
+      contentBtn.appendChild(b);
+    }
+  }
 }
 
 /* ---------- tasks ---------- */
@@ -980,6 +1045,9 @@ async function loadProjects(){
     d.projects.map(p=>`<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('');
   const sel3 = $('#cd-project');
   if(sel3) sel3.innerHTML = '<option value="">بدون پروژه</option>' +
+    d.projects.map(p=>`<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('');
+  const sel4 = $('#cg-project');
+  if(sel4) sel4.innerHTML = '<option value="">بدون پروژه</option>' +
     d.projects.map(p=>`<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('');
   return d.projects;
 }
@@ -1621,11 +1689,327 @@ async function loadNotifPreview(){
   }catch(e){}
 }
 
-/* ---------- navigation ---------- */
+
+/* ---------- Content Agent (§9) ---------- */
+let currentContentFilter='all';
+async function loadContent(f){
+  currentContentFilter = f || currentContentFilter;
+  document.querySelectorAll('#contentSeg button').forEach(b=>b.classList.toggle('on', b.dataset.f===currentContentFilter));
+  const list=$('#contentList');
+  const statsEl=$('#contentStats');
+  const countEl=$('#contentCount');
+  list.innerHTML = skeleton(4);
+  try{
+    const data = await api('/api/content/drafts?limit=50');
+    let items = data.drafts;
+    if(currentContentFilter!=='all'){
+      items = items.filter(d=>d.status===currentContentFilter);
+    }
+    if(countEl) countEl.textContent = fa(items.length)+' پیش‌نویس';
+    // Stats
+    try{
+      const sData = await api('/api/content/stats');
+      const s = sData.stats;
+      if(statsEl){
+        statsEl.innerHTML = `<div class="stats">
+          <div class="stat"><div class="n">${fa(s.total)}</div><div class="l">کل</div></div>
+          <div class="stat"><div class="n">${fa(s.by_status.draft||0)}</div><div class="l">پیش‌نویس</div></div>
+          <div class="stat ${s.by_status.pending_approval?'warn':''}"><div class="n">${fa(s.by_status.pending_approval||0)}</div><div class="l">منتظر تأیید</div></div>
+          <div class="stat ok"><div class="n">${fa(s.by_status.published||0)}</div><div class="l">منتشرشده</div></div>
+        </div>`;
+      }
+    }catch(e){}
+
+    if(!items.length){
+      list.innerHTML = emptyState('📝','پیش‌نویسی نیست — یکی تولید کن');
+      return;
+    }
+    list.innerHTML = items.map(d=>{
+      const statusLabels={draft:'پیش‌نویس',pending_approval:'منتظر تأیید',approved:'تأییدشده',published:'منتشرشده',rejected:'ردشده',archived:'آرشیو'};
+      const badge = d.status==='published' ? 'b-done' : d.status==='pending_approval' ? 'b-high' : d.status==='draft' ? 'b-normal' : 'b-status';
+      return `<div class="item" onclick="openContentDetail('${esc(d.draft_uid)}')">
+        <div class="top"><div class="t">${esc(d.title)}</div><span class="badge ${badge}">${esc(statusLabels[d.status]||d.status)}</span></div>
+        <div class="meta"><span>${fa(d.word_count)} کلمه</span>${d.seo_score?`<span>سئو ${fa(d.seo_score)}</span>`:''}${pBadge(d.project_name)}</div>
+        ${d.excerpt?`<div class="muted-s">${esc(d.excerpt.slice(0,100))}…</div>`:''}
+      </div>`;
+    }).join('');
+  }catch(e){
+    list.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+
+function openContentGenerateSheet(){
+  if(!window._projects) loadProjects();
+  const sel=$('#cg-project');
+  if(sel && window._projects){
+    sel.innerHTML = '<option value="">بدون پروژه</option>' + window._projects.map(p=>`<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('');
+  }
+  $('#contentGenBack').classList.add('open');
+}
+function closeContentGenerateSheet(){ $('#contentGenBack').classList.remove('open'); }
+
+async function saveContentGenerate(){
+  const btn=$('#cg-save');
+  const topic=$('#cg-topic').value.trim();
+  if(!topic){ toast('موضوع لازم است'); return; }
+  const payload={
+    topic,
+    project_slug:$('#cg-project').value||null,
+    target_words:parseInt($('#cg-words').value)||2000,
+  };
+  btn.disabled=true; btn.innerHTML='<span class="loader"></span> در حال تولید…';
+  try{
+    const r=await api('/api/content/generate',{method:'POST',body:JSON.stringify(payload)});
+    if(r.executed) toast('✅ مقاله تولید شد','ok');
+    else toast('⏳ درخواست ثبت شد و منتظر تأیید است');
+    closeContentGenerateSheet();
+    await loadContent();
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+  finally{ btn.disabled=false; btn.textContent='تولید محتوا'; }
+}
+
+async function openContentDetail(uid){
+  $('#contentDetailBack').classList.add('open');
+  $('#contentDetailBody').innerHTML = skeleton(4);
+  try{
+    const data = await api('/api/content/drafts/'+encodeURIComponent(uid));
+    const d=data.draft;
+    let h=`<div class="muted-s" style="margin-bottom:8px">${pBadge(d.project_id||'')} ${esc(d.status)} • ${fa(d.word_count)} کلمه ${d.seo_score?`• سئو ${fa(d.seo_score)}`:''}</div>`;
+    if(d.slug_en) h+=`<div class="field"><label>Slug EN</label><div class="muted-s">${esc(d.slug_en)}</div></div>`;
+    if(d.meta_title) h+=`<div class="field"><label>Meta Title</label><div class="muted-s">${esc(d.meta_title)}</div></div>`;
+    if(d.meta_description) h+=`<div class="field"><label>Meta Description</label><div class="muted-s">${esc(d.meta_description)}</div></div>`;
+    if(d.focus_keyword) h+=`<div class="field"><label>Focus Keyword</label><div class="muted-s">${esc(d.focus_keyword)}</div></div>`;
+    if(d.cannibalization && d.cannibalization.length){
+      h+=`<div class="field"><label>⚠️ Cannibalization</label><div class="muted-s">${d.cannibalization.map(c=>`${esc(c.title)} (${fa(c.similarity)})`).join('<br>')}</div></div>`;
+    }
+    if(d.outline && d.outline.length){
+      h+=`<div class="field"><label>Outline</label><div class="muted-s">${d.outline.map((o,i)=>`${fa(i+1)}. ${esc(o)}`).join('<br>')}</div></div>`;
+    }
+    if(d.content){
+      const preview = d.content.slice(0,800);
+      h+=`<div class="field"><label>محتوا (پیش‌نمایش)</label><div class="muted-s" style="white-space:pre-wrap;max-height:300px;overflow:auto;background:rgba(0,0,0,.2);padding:10px;border-radius:10px">${esc(preview)}${d.content.length>800?'…':''}</div></div>`;
+    }
+    if(d.faq && d.faq.length){
+      h+=`<div class="field"><label>FAQ</label><div class="muted-s">${d.faq.map(f=>`<b>Q: ${esc(f.q||f.question||'')}</b><br>A: ${esc(f.a||f.answer||'')}`).join('<br><br>')}</div></div>`;
+    }
+    if(d.image_prompt) h+=`<div class="field"><label>Image Prompt</label><div class="muted-s">${esc(d.image_prompt)}</div></div>`;
+    if(d.cta) h+=`<div class="field"><label>CTA</label><div class="muted-s">${esc(d.cta)}</div></div>`;
+    if(d.wordpress_url) h+=`<div class="field"><label>WordPress</label><div class="muted-s"><a href="${esc(d.wordpress_url)}" target="_blank">${esc(d.wordpress_url)}</a></div></div>`;
+
+    h+=`<div class="sep"></div><div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn sm" onclick="seoAuditContent('${esc(d.draft_uid)}')">🔍 بررسی سئو</button>
+      <button class="btn sm ghost" onclick="publishContentDraft('${esc(d.draft_uid)}', true)">📤 پیش‌نویس وردپرس</button>
+      <button class="btn sm ghost" onclick="publishContentDraft('${esc(d.draft_uid)}', false)">🚀 انتشار نهایی (🔴)</button>
+      <button class="btn sm ghost" onclick="if(confirm('حذف شود؟')) deleteContentDraft('${esc(d.draft_uid)}')">🗑 حذف</button>
+    </div>`;
+
+    $('#contentDetailBody').innerHTML = h;
+    $('#contentDetailTitle').textContent = '📝 '+d.title;
+  }catch(e){
+    $('#contentDetailBody').innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+function closeContentDetail(){ $('#contentDetailBack').classList.remove('open'); }
+
+async function seoAuditContent(uid){
+  toast('در حال بررسی سئو…');
+  try{
+    const r=await api('/api/content/drafts/'+encodeURIComponent(uid)+'/seo-audit',{method:'POST'});
+    if(r.executed){
+      toast('✅ بررسی سئو انجام شد — امتیاز '+(r.audit?r.audit.score:'?'),'ok');
+      await openContentDetail(uid);
+    } else {
+      toast('⏳ درخواست بررسی ثبت شد');
+    }
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+
+async function publishContentDraft(uid, asDraft){
+  const action = asDraft ? 'پیش‌نویس وردپرس' : 'انتشار نهایی';
+  if(!confirm(action+' انجام شود؟'+(asDraft?'':' این اقدام 🔴 و نیاز به دو تأیید دارد.'))) return;
+  try{
+    const r=await api('/api/content/drafts/'+encodeURIComponent(uid)+'/publish',{method:'POST',body:JSON.stringify({as_draft:asDraft})});
+    if(r.executed) toast('✅ '+ (r.result||action+' انجام شد'),'ok');
+    else toast('⏳ درخواست ثبت شد و منتظر تأیید است');
+    await loadContent();
+    closeContentDetail();
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+
+async function deleteContentDraft(uid){
+  try{
+    const r=await api('/api/content/drafts/'+encodeURIComponent(uid),{method:'DELETE'});
+    if(r.executed) toast('🗑 حذف شد','ok');
+    else toast('⏳ درخواست حذف ثبت شد');
+    await loadContent();
+    closeContentDetail();
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
 
 /* ---------- navigation ---------- */
+
+
+
+/* ---------- Content Agent (§9) ---------- */
+let currentContentFilter='all';
+async function loadContent(f){
+  currentContentFilter = f || currentContentFilter;
+  document.querySelectorAll('#contentSeg button').forEach(b=>b.classList.toggle('on', b.dataset.f===currentContentFilter));
+  const list=$('#contentList');
+  const statsEl=$('#contentStats');
+  const countEl=$('#contentCount');
+  list.innerHTML = skeleton(4);
+  try{
+    const data = await api('/api/content/drafts?limit=50');
+    let items = data.drafts;
+    if(currentContentFilter!=='all'){
+      items = items.filter(d=>d.status===currentContentFilter);
+    }
+    if(countEl) countEl.textContent = fa(items.length)+' پیش‌نویس';
+    // Stats
+    try{
+      const sData = await api('/api/content/stats');
+      const s = sData.stats;
+      if(statsEl){
+        statsEl.innerHTML = `<div class="stats">
+          <div class="stat"><div class="n">${fa(s.total)}</div><div class="l">کل</div></div>
+          <div class="stat"><div class="n">${fa(s.by_status.draft||0)}</div><div class="l">پیش‌نویس</div></div>
+          <div class="stat ${s.by_status.pending_approval?'warn':''}"><div class="n">${fa(s.by_status.pending_approval||0)}</div><div class="l">منتظر تأیید</div></div>
+          <div class="stat ok"><div class="n">${fa(s.by_status.published||0)}</div><div class="l">منتشرشده</div></div>
+        </div>`;
+      }
+    }catch(e){}
+
+    if(!items.length){
+      list.innerHTML = emptyState('📝','پیش‌نویسی نیست — یکی تولید کن');
+      return;
+    }
+    list.innerHTML = items.map(d=>{
+      const statusLabels={draft:'پیش‌نویس',pending_approval:'منتظر تأیید',approved:'تأییدشده',published:'منتشرشده',rejected:'ردشده',archived:'آرشیو'};
+      const badge = d.status==='published' ? 'b-done' : d.status==='pending_approval' ? 'b-high' : d.status==='draft' ? 'b-normal' : 'b-status';
+      return `<div class="item" onclick="openContentDetail('${esc(d.draft_uid)}')">
+        <div class="top"><div class="t">${esc(d.title)}</div><span class="badge ${badge}">${esc(statusLabels[d.status]||d.status)}</span></div>
+        <div class="meta"><span>${fa(d.word_count)} کلمه</span>${d.seo_score?`<span>سئو ${fa(d.seo_score)}</span>`:''}${pBadge(d.project_name)}</div>
+        ${d.excerpt?`<div class="muted-s">${esc(d.excerpt.slice(0,100))}…</div>`:''}
+      </div>`;
+    }).join('');
+  }catch(e){
+    list.innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+
+function openContentGenerateSheet(){
+  if(!window._projects) loadProjects();
+  const sel=$('#cg-project');
+  if(sel && window._projects){
+    sel.innerHTML = '<option value="">بدون پروژه</option>' + window._projects.map(p=>`<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('');
+  }
+  $('#contentGenBack').classList.add('open');
+}
+function closeContentGenerateSheet(){ $('#contentGenBack').classList.remove('open'); }
+
+async function saveContentGenerate(){
+  const btn=$('#cg-save');
+  const topic=$('#cg-topic').value.trim();
+  if(!topic){ toast('موضوع لازم است'); return; }
+  const payload={
+    topic,
+    project_slug:$('#cg-project').value||null,
+    target_words:parseInt($('#cg-words').value)||2000,
+  };
+  btn.disabled=true; btn.innerHTML='<span class="loader"></span> در حال تولید…';
+  try{
+    const r=await api('/api/content/generate',{method:'POST',body:JSON.stringify(payload)});
+    if(r.executed) toast('✅ مقاله تولید شد','ok');
+    else toast('⏳ درخواست ثبت شد و منتظر تأیید است');
+    closeContentGenerateSheet();
+    await loadContent();
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+  finally{ btn.disabled=false; btn.textContent='تولید محتوا'; }
+}
+
+async function openContentDetail(uid){
+  $('#contentDetailBack').classList.add('open');
+  $('#contentDetailBody').innerHTML = skeleton(4);
+  try{
+    const data = await api('/api/content/drafts/'+encodeURIComponent(uid));
+    const d=data.draft;
+    let h=`<div class="muted-s" style="margin-bottom:8px">${pBadge(d.project_id||'')} ${esc(d.status)} • ${fa(d.word_count)} کلمه ${d.seo_score?`• سئو ${fa(d.seo_score)}`:''}</div>`;
+    if(d.slug_en) h+=`<div class="field"><label>Slug EN</label><div class="muted-s">${esc(d.slug_en)}</div></div>`;
+    if(d.meta_title) h+=`<div class="field"><label>Meta Title</label><div class="muted-s">${esc(d.meta_title)}</div></div>`;
+    if(d.meta_description) h+=`<div class="field"><label>Meta Description</label><div class="muted-s">${esc(d.meta_description)}</div></div>`;
+    if(d.focus_keyword) h+=`<div class="field"><label>Focus Keyword</label><div class="muted-s">${esc(d.focus_keyword)}</div></div>`;
+    if(d.cannibalization && d.cannibalization.length){
+      h+=`<div class="field"><label>⚠️ Cannibalization</label><div class="muted-s">${d.cannibalization.map(c=>`${esc(c.title)} (${fa(c.similarity)})`).join('<br>')}</div></div>`;
+    }
+    if(d.outline && d.outline.length){
+      h+=`<div class="field"><label>Outline</label><div class="muted-s">${d.outline.map((o,i)=>`${fa(i+1)}. ${esc(o)}`).join('<br>')}</div></div>`;
+    }
+    if(d.content){
+      const preview = d.content.slice(0,800);
+      h+=`<div class="field"><label>محتوا (پیش‌نمایش)</label><div class="muted-s" style="white-space:pre-wrap;max-height:300px;overflow:auto;background:rgba(0,0,0,.2);padding:10px;border-radius:10px">${esc(preview)}${d.content.length>800?'…':''}</div></div>`;
+    }
+    if(d.faq && d.faq.length){
+      h+=`<div class="field"><label>FAQ</label><div class="muted-s">${d.faq.map(f=>`<b>Q: ${esc(f.q||f.question||'')}</b><br>A: ${esc(f.a||f.answer||'')}`).join('<br><br>')}</div></div>`;
+    }
+    if(d.image_prompt) h+=`<div class="field"><label>Image Prompt</label><div class="muted-s">${esc(d.image_prompt)}</div></div>`;
+    if(d.cta) h+=`<div class="field"><label>CTA</label><div class="muted-s">${esc(d.cta)}</div></div>`;
+    if(d.wordpress_url) h+=`<div class="field"><label>WordPress</label><div class="muted-s"><a href="${esc(d.wordpress_url)}" target="_blank">${esc(d.wordpress_url)}</a></div></div>`;
+
+    h+=`<div class="sep"></div><div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn sm" onclick="seoAuditContent('${esc(d.draft_uid)}')">🔍 بررسی سئو</button>
+      <button class="btn sm ghost" onclick="publishContentDraft('${esc(d.draft_uid)}', true)">📤 پیش‌نویس وردپرس</button>
+      <button class="btn sm ghost" onclick="publishContentDraft('${esc(d.draft_uid)}', false)">🚀 انتشار نهایی (🔴)</button>
+      <button class="btn sm ghost" onclick="if(confirm('حذف شود؟')) deleteContentDraft('${esc(d.draft_uid)}')">🗑 حذف</button>
+    </div>`;
+
+    $('#contentDetailBody').innerHTML = h;
+    $('#contentDetailTitle').textContent = '📝 '+d.title;
+  }catch(e){
+    $('#contentDetailBody').innerHTML = `<div class="empty">خطا: ${esc(e.message)}</div>`;
+  }
+}
+function closeContentDetail(){ $('#contentDetailBack').classList.remove('open'); }
+
+async function seoAuditContent(uid){
+  toast('در حال بررسی سئو…');
+  try{
+    const r=await api('/api/content/drafts/'+encodeURIComponent(uid)+'/seo-audit',{method:'POST'});
+    if(r.executed){
+      toast('✅ بررسی سئو انجام شد — امتیاز '+(r.audit?r.audit.score:'?'),'ok');
+      await openContentDetail(uid);
+    } else {
+      toast('⏳ درخواست بررسی ثبت شد');
+    }
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+
+async function publishContentDraft(uid, asDraft){
+  const action = asDraft ? 'پیش‌نویس وردپرس' : 'انتشار نهایی';
+  if(!confirm(action+' انجام شود؟'+(asDraft?'':' این اقدام 🔴 و نیاز به دو تأیید دارد.'))) return;
+  try{
+    const r=await api('/api/content/drafts/'+encodeURIComponent(uid)+'/publish',{method:'POST',body:JSON.stringify({as_draft:asDraft})});
+    if(r.executed) toast('✅ '+ (r.result||action+' انجام شد'),'ok');
+    else toast('⏳ درخواست ثبت شد و منتظر تأیید است');
+    await loadContent();
+    closeContentDetail();
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+
+async function deleteContentDraft(uid){
+  try{
+    const r=await api('/api/content/drafts/'+encodeURIComponent(uid),{method:'DELETE'});
+    if(r.executed) toast('🗑 حذف شد','ok');
+    else toast('⏳ درخواست حذف ثبت شد');
+    await loadContent();
+    closeContentDetail();
+  }catch(e){ toast('خطا: '+e.message,'err'); }
+}
+
+/* ---------- navigation ---------- */
+
 const LOADERS={overview:loadOverview,tasks:()=>loadTasks(),projects:loadProjectView,
-               crm:()=>loadCrm(),approvals:loadApprovals,notifications:()=>loadNotifications(),
+               crm:()=>loadCrm(),content:()=>loadContent(),approvals:loadApprovals,notifications:()=>loadNotifications(),
                conn:loadConnections,
                more:()=>{loadMemory();loadLogs();}};
 document.querySelectorAll('nav.tabs button').forEach(b=>{
@@ -1673,6 +2057,14 @@ $('#cd-save').onclick=saveCrmDeal;
 $('#crmDetailClose').onclick=closeCrmDetail;
 $('#crmDetailBack').onclick=e=>{ if(e.target.id==='crmDetailBack') closeCrmDetail(); };
 document.querySelectorAll('#crmSeg button').forEach(b=>b.onclick=()=>loadCrm(b.dataset.f));
+$('#contentGenClose').onclick=closeContentGenerateSheet;
+$('#contentGenBack').onclick=e=>{ if(e.target.id==='contentGenBack') closeContentGenerateSheet(); };
+$('#cg-cancel').onclick=closeContentGenerateSheet;
+$('#cg-save').onclick=saveContentGenerate;
+$('#contentDetailClose').onclick=closeContentDetail;
+$('#contentDetailBack').onclick=e=>{ if(e.target.id==='contentDetailBack') closeContentDetail(); };
+document.querySelectorAll('#contentSeg button').forEach(b=>b.onclick=()=>loadContent(b.dataset.f));
+
 
 
 $('#t-save').onclick=async()=>{

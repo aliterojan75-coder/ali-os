@@ -44,6 +44,9 @@ ACTION_RISK: dict[str, str] = {
     "crm.add_interaction": GREEN,
     "crm.create_deal": GREEN,
     "notification.create": GREEN,
+    "content.draft_create": GREEN,
+    "content.draft_update": GREEN,
+    "seo.audit": GREEN,
     # changes with real consequences
     "task.delete": YELLOW,
     "project.update": YELLOW,
@@ -51,12 +54,14 @@ ACTION_RISK: dict[str, str] = {
     "wordpress.create_draft": YELLOW,
     "wordpress.update_post": YELLOW,
     "content.generate": YELLOW,
+    "content.publish_draft": YELLOW,
     "notification.send": YELLOW,
     "integration.connect": YELLOW,
     "crm.update_contact": YELLOW,
     "crm.update_deal": YELLOW,
     "crm.update_deal_stage": YELLOW,
     "crm.delete_interaction": YELLOW,
+    "content.delete_draft": YELLOW,
     # irreversible / public / costly
     "wordpress.publish": RED,
     "wordpress.delete_post": RED,
@@ -68,6 +73,7 @@ ACTION_RISK: dict[str, str] = {
     "social.publish": RED,
     "crm.delete_contact": RED,
     "crm.delete_deal": RED,
+    "content.publish": RED,
 }
 
 # Keyword fallback for action types not yet in the table — default to the safe

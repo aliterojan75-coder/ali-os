@@ -345,6 +345,56 @@ CREATE TABLE IF NOT EXISTS notifications (
     created_at          REAL NOT NULL
 );
 
+-- ─── Phase 3: Content Agent (§9) + SEO Agent (§8) ───────────────────────────
+CREATE TABLE IF NOT EXISTS content_drafts (
+    id                  INTEGER PRIMARY KEY,
+    draft_uid           TEXT UNIQUE NOT NULL,
+    project_id          INTEGER REFERENCES projects(id),
+    topic               TEXT NOT NULL,
+    title               TEXT NOT NULL,
+    slug_en             TEXT,
+    outline_json        TEXT DEFAULT '[]',
+    content             TEXT,
+    excerpt             TEXT,
+    faq_json            TEXT DEFAULT '[]',
+    image_prompt        TEXT,
+    cta                 TEXT,
+    meta_title          TEXT,
+    meta_description    TEXT,
+    focus_keyword       TEXT,
+    canonical_url       TEXT,
+    word_count          INTEGER DEFAULT 0,
+    status              TEXT DEFAULT 'draft',  -- draft | pending_approval | approved | published | rejected | archived
+    cannibalization_json TEXT DEFAULT '[]',
+    seo_score           INTEGER,
+    seo_notes           TEXT,
+    wordpress_post_id   INTEGER,
+    wordpress_url       TEXT,
+    created_by          INTEGER REFERENCES users(id),
+    created_at          REAL NOT NULL,
+    updated_at          REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS seo_audits (
+    id                  INTEGER PRIMARY KEY,
+    audit_uid           TEXT UNIQUE NOT NULL,
+    project_id          INTEGER REFERENCES projects(id),
+    url                 TEXT,
+    post_id             INTEGER,
+    title               TEXT,
+    focus_keyword       TEXT,
+    score               INTEGER,
+    issues_json         TEXT DEFAULT '[]',
+    suggestions_json    TEXT DEFAULT '[]',
+    content_length      INTEGER,
+    has_meta_title      INTEGER DEFAULT 0,
+    has_meta_desc       INTEGER DEFAULT 0,
+    has_canonical       INTEGER DEFAULT 0,
+    has_focus_keyword   INTEGER DEFAULT 0,
+    cannibalization_risk INTEGER DEFAULT 0,
+    created_at          REAL NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_integrations_project ON integrations(project_id);
 CREATE INDEX IF NOT EXISTS idx_integrations_service ON integrations(service);
 CREATE INDEX IF NOT EXISTS idx_pending_status ON pending_actions(status);
@@ -366,6 +416,10 @@ CREATE INDEX IF NOT EXISTS idx_crm_deals_stage ON crm_deals(stage);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(is_read);
 CREATE INDEX IF NOT EXISTS idx_notifications_type ON notifications(type);
+CREATE INDEX IF NOT EXISTS idx_content_drafts_project ON content_drafts(project_id);
+CREATE INDEX IF NOT EXISTS idx_content_drafts_status ON content_drafts(status);
+CREATE INDEX IF NOT EXISTS idx_content_drafts_uid ON content_drafts(draft_uid);
+CREATE INDEX IF NOT EXISTS idx_seo_audits_project ON seo_audits(project_id);
 """
 
 

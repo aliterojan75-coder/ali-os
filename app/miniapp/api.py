@@ -852,6 +852,216 @@ def notifications_mark_all_read():
     return jsonify({"ok": True, "marked": count})
 
 
+
+# ── Content Agent (§9) + SEO (§8) ───────────────────────────────────────────
+
+@api.get("/content/drafts")
+def content_list_drafts():
+    from app.content.repository import list_drafts
+
+    project_slug = request.args.get("project")
+    project_id = None
+    if project_slug:
+        p = repo.get_project(project_slug)
+        project_id = p["id"] if p else None
+    status = request.args.get("status")
+    limit = min(int(request.args.get("limit", 30)), 100)
+    rows = list_drafts(project_id=project_id, status=status, limit=limit)
+    return jsonify({"ok": True, "drafts": [dict(r) for r in rows]})
+
+
+@api.post("/content/generate")
+def content_generate_api():
+    from app import approvals
+
+    body = request.get_json(silent=True) or {}
+    topic = (body.get("topic") or "").strip()
+    if not topic:
+        return jsonify({"ok": False, "error": "topic is required"}), 400
+
+    project_id = None
+    slug = body.get("project_slug")
+    if slug:
+        p = repo.get_project(slug)
+        project_id = p["id"] if p else None
+
+    telegram_id = (g.telegram_user or {}).get("id")
+    user = repo.get_user(telegram_id) if telegram_id else None
+
+    res = approvals.request_action(
+        action_type="content.generate",
+        title=f"تولید محتوا: {topic[:50]}",
+        payload={
+            "topic": topic,
+            "project_id": project_id,
+            "created_by": user["id"] if user else None,
+            "target_words": body.get("target_words", 2000),
+        },
+        requested_by=user["id"] if user else None,
+        project_id=project_id,
+        agent="miniapp",
+    )
+    if res.executed:
+        from app.content.repository import list_drafts
+        drafts = list_drafts(project_id=project_id, limit=1)
+        return jsonify({"ok": True, "executed": True, "draft": dict(drafts[0]) if drafts else None, "result": res.result})
+    else:
+        return jsonify({"ok": True, "executed": False, "action_uid": res.action_uid, "message": res.message})
+
+
+@api.get("/content/drafts/<draft_uid>")
+def content_get_draft(draft_uid: str):
+    from app.content.repository import get_draft
+    import json as _json
+
+    draft = get_draft(draft_uid)
+    if not draft:
+        return jsonify({"ok": False, "error": "not found"}), 404
+    d = dict(draft)
+    # Parse JSON fields for UI
+    for field in ("outline_json", "faq_json", "cannibalization_json"):
+        try:
+            d[field.replace("_json", "")] = _json.loads(d.get(field) or "[]")
+        except Exception:
+            d[field.replace("_json", "")] = []
+    return jsonify({"ok": True, "draft": d})
+
+
+@api.post("/content/drafts/<draft_uid>")
+def content_update_draft(draft_uid: str):
+    from app import approvals
+
+    body = request.get_json(silent=True) or {}
+    if not body:
+        return jsonify({"ok": False, "error": "no fields"}), 400
+
+    telegram_id = (g.telegram_user or {}).get("id")
+    user = repo.get_user(telegram_id) if telegram_id else None
+
+    payload = {"draft_uid": draft_uid}
+    for k in ("title", "slug_en", "content", "excerpt", "meta_title", "meta_description", "focus_keyword", "status", "project_id"):
+        if k in body:
+            payload[k] = body[k]
+    # Handle outline, faq as json
+    if "outline" in body:
+        import json as _json
+        payload["outline_json"] = _json.dumps(body["outline"], ensure_ascii=False)
+    if "faq" in body:
+        import json as _json
+        payload["faq_json"] = _json.dumps(body["faq"], ensure_ascii=False)
+
+    res = approvals.request_action(
+        action_type="content.draft_update",
+        title=f"ویرایش پیش‌نویس: {draft_uid}",
+        payload=payload,
+        requested_by=user["id"] if user else None,
+        agent="miniapp",
+    )
+    if res.executed:
+        from app.content.repository import get_draft
+        d = get_draft(draft_uid)
+        return jsonify({"ok": True, "executed": True, "draft": dict(d) if d else None})
+    else:
+        return jsonify({"ok": True, "executed": False, "action_uid": res.action_uid})
+
+
+@api.delete("/content/drafts/<draft_uid>")
+def content_delete_draft(draft_uid: str):
+    from app import approvals
+
+    telegram_id = (g.telegram_user or {}).get("id")
+    user = repo.get_user(telegram_id) if telegram_id else None
+
+    res = approvals.request_action(
+        action_type="content.delete_draft",
+        title=f"حذف پیش‌نویس: {draft_uid}",
+        payload={"draft_uid": draft_uid},
+        requested_by=user["id"] if user else None,
+        agent="miniapp",
+    )
+    if res.executed:
+        return jsonify({"ok": True, "executed": True})
+    else:
+        return jsonify({"ok": True, "executed": False, "action_uid": res.action_uid})
+
+
+@api.post("/content/drafts/<draft_uid>/publish")
+def content_publish_draft_api(draft_uid: str):
+    from app import approvals
+
+    body = request.get_json(silent=True) or {}
+    as_draft = body.get("as_draft", True)
+
+    telegram_id = (g.telegram_user or {}).get("id")
+    user = repo.get_user(telegram_id) if telegram_id else None
+
+    action_type = "content.publish_draft" if as_draft else "content.publish"
+
+    res = approvals.request_action(
+        action_type=action_type,
+        title=f"{'پیش‌نویس وردپرس' if as_draft else 'انتشار'}: {draft_uid}",
+        payload={"draft_uid": draft_uid},
+        requested_by=user["id"] if user else None,
+        agent="miniapp",
+    )
+    if res.executed:
+        return jsonify({"ok": True, "executed": True, "result": res.result})
+    else:
+        return jsonify({"ok": True, "executed": False, "action_uid": res.action_uid, "message": res.message})
+
+
+@api.post("/content/drafts/<draft_uid>/seo-audit")
+def content_seo_audit_api(draft_uid: str):
+    from app import approvals
+
+    telegram_id = (g.telegram_user or {}).get("id")
+    user = repo.get_user(telegram_id) if telegram_id else None
+
+    res = approvals.request_action(
+        action_type="seo.audit",
+        title=f"بررسی سئو: {draft_uid}",
+        payload={"draft_uid": draft_uid},
+        requested_by=user["id"] if user else None,
+        agent="miniapp",
+    )
+    if res.executed:
+        # Fetch latest audit
+        from app import db
+        row = db.query_one("SELECT * FROM seo_audits ORDER BY id DESC LIMIT 1")
+        return jsonify({"ok": True, "executed": True, "audit": dict(row) if row else None, "result": res.result})
+    else:
+        return jsonify({"ok": True, "executed": False, "action_uid": res.action_uid})
+
+
+@api.get("/content/stats")
+def content_stats_api():
+    from app.content.repository import content_stats
+
+    project_slug = request.args.get("project")
+    project_id = None
+    if project_slug:
+        p = repo.get_project(project_slug)
+        project_id = p["id"] if p else None
+    stats = content_stats(project_id=project_id)
+    return jsonify({"ok": True, "stats": stats})
+
+
+@api.get("/content/cannibalization")
+def content_cannibalization_api():
+    from app.agents.content_agent import check_cannibalization
+
+    project_slug = request.args.get("project")
+    project_id = None
+    if project_slug:
+        p = repo.get_project(project_slug)
+        project_id = p["id"] if p else None
+    title = request.args.get("title") or request.args.get("q") or ""
+    if not title:
+        return jsonify({"ok": False, "error": "title is required"}), 400
+    results = check_cannibalization(project_id, title)
+    return jsonify({"ok": True, "results": results})
+
+
 @api.get("/health")
 def health():
     return jsonify({"ok": True, "model": config.LLM_MODEL})
