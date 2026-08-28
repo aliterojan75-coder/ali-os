@@ -111,8 +111,29 @@ def test_webhook_allows_owner_and_whoami(monkeypatch):
     monkeypatch.setattr(wh, "send_message", lambda **kw: got.append(kw))
     r2 = c.post("/webhook", json=_msg_update(999, "/whoami"),
                 headers={"X-Telegram-Bot-Api-Secret-Token": config.WEBHOOK_SECRET})
-    assert r2.get_json().get("whoami") is True
+    body = r2.get_json()
+    assert body.get("whoami") is True
+    assert body.get("owner_lock_enabled") is True
+    assert body.get("allowed_chats") == 1
     assert got and "999" in got[0]["text"]
+    assert "قفل مالکیت فعال" in got[0]["text"]
+    assert "TELEGRAM_ADMIN_CHAT_ID ثبت کنید" not in got[0]["text"]
+
+
+def test_whoami_inactive_lock_shows_setup_guide(monkeypatch):
+    from app.config import config
+    monkeypatch.setattr(config, "TELEGRAM_ADMIN_CHAT_ID", "")
+    import app.webhook as wh
+    got = []
+    monkeypatch.setattr(wh, "send_message", lambda **kw: got.append(kw))
+    c = _client()
+    r = c.post("/webhook", json=_msg_update(777, "/whoami"),
+               headers={"X-Telegram-Bot-Api-Secret-Token": config.WEBHOOK_SECRET})
+    body = r.get_json()
+    assert body.get("owner_lock_enabled") is False
+    assert body.get("allowed_chats") == 0
+    assert got and "قفل مالکیت غیرفعال" in got[0]["text"]
+    assert "TELEGRAM_ADMIN_CHAT_ID ثبت کنید" in got[0]["text"]
 
 
 def test_webhook_open_when_unset(monkeypatch):

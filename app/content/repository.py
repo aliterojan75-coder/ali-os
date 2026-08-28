@@ -108,34 +108,23 @@ def delete_draft(draft_uid: str) -> bool:
 
 
 def content_stats(project_id: int | None = None) -> dict:
-    params = []
-    where = ""
-    if project_id is not None:
-        where = " WHERE project_id=?"
-        params.append(project_id)
-
-    def _count(extra: str = "", extra_params: tuple = ()):
-        sql = f"SELECT COUNT(*) AS c FROM content_drafts{where}"
-        if extra:
-            sql += f" AND {extra}" if where else f" WHERE {extra}"
-        row = db.query_one(sql, tuple(params) + extra_params)
-        return row["c"] if row else 0
-
-    total = _count()
-    by_status = {}
-    for st in ("draft", "pending_approval", "approved", "published", "rejected", "archived"):
-        by_status[st] = _count("status=?", (st,))
-
-    avg_words = 0
-    try:
-        sql = f"SELECT AVG(word_count) AS a FROM content_drafts{where}"
-        row = db.query_one(sql, tuple(params))
-        avg_words = int(row["a"] or 0) if row else 0
-    except Exception:
-        pass
-
+    """Stats for content cards — one grouped query instead of per-status counts."""
+    params: tuple[Any, ...] = (project_id,) if project_id is not None else ()
+    where = " WHERE project_id=?" if project_id is not None else ""
+    rows = db.query_all(
+        f"""SELECT status, COUNT(*) AS c, COALESCE(SUM(word_count),0) AS words
+             FROM content_drafts{where} GROUP BY status""",
+        params,
+    )
+    by_status = {st: 0 for st in ("draft", "pending_approval", "approved", "published", "rejected", "archived")}
+    total = 0
+    words = 0
+    for r in rows:
+        by_status[r["status"]] = r["c"]
+        total += r["c"]
+        words += r["words"] or 0
     return {
         "total": total,
         "by_status": by_status,
-        "avg_word_count": avg_words,
+        "avg_word_count": int(words / total) if total else 0,
     }

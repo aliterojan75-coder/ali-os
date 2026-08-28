@@ -6,6 +6,7 @@ thin, defensive HTTP client. It implements the full LLMProvider contract.
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, Iterator
 
 import requests
@@ -43,6 +44,8 @@ class MiniMaxDahlProvider(LLMProvider):
         self.base_url = config.LLM_BASE_URL.rstrip("/")
         self.api_key = config.LLM_API_KEY
         self.model = config.LLM_MODEL
+        self.fallback_base_url = (getattr(config, "LLM_BASE_URL_FALLBACK", "") or "").rstrip("/")
+        self.fallback_model = getattr(config, "LLM_MODEL_FALLBACK", "") or ""
         self.timeout = config.LLM_TIMEOUT
         self.max_tokens = config.LLM_MAX_TOKENS
         self._session = requests.Session()
@@ -61,9 +64,10 @@ class MiniMaxDahlProvider(LLMProvider):
         max_tokens: int | None,
         stream: bool,
         response_format: dict | None,
+        model: str | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
-            "model": self.model,
+            "model": model or self.model,
             "messages": [
                 {"role": m.role, "content": m.content}
                 for m in messages
@@ -77,25 +81,70 @@ class MiniMaxDahlProvider(LLMProvider):
             payload["response_format"] = response_format
         return payload
 
-    def _post(self, payload: dict[str, Any], stream: bool = False) -> requests.Response:
-        url = f"{self.base_url}/chat/completions"
-        try:
-            resp = self._session.post(
-                url,
-                headers=self._headers(),
-                json=payload,
-                timeout=self.timeout,
-                stream=stream,
-            )
-        except requests.RequestException as exc:
-            raise LLMError(f"LLM request failed: {exc}") from exc
+    def _is_retryable_response(self, resp: requests.Response) -> bool:
+        text = (resp.text or "")[:2000].lower()
+        return (
+            resp.status_code in {403, 404, 429}
+            or "cloudflare" in text
+            or "cf-chl" in text
+            or "checking your browser" in text
+            or "just a moment" in text
+        )
 
-        if resp.status_code >= 400:
-            # Never log the key; just status + body
-            raise LLMError(
-                f"LLM returned HTTP {resp.status_code}: {resp.text[:500]}"
+    def _post_once(self, base_url: str, payload: dict[str, Any], stream: bool = False) -> requests.Response:
+        url = f"{base_url}/chat/completions"
+        return self._session.post(
+            url,
+            headers=self._headers(),
+            json=payload,
+            timeout=self.timeout,
+            stream=stream,
+        )
+
+    def _post_with_backoff(self, base_url: str, payload: dict[str, Any], stream: bool = False) -> requests.Response:
+        waits = (0, 3, 8, 15)  # initial try + three retries
+        last_error: Exception | None = None
+        last_resp: requests.Response | None = None
+        for attempt, wait_s in enumerate(waits):
+            if wait_s:
+                time.sleep(wait_s)
+            try:
+                resp = self._post_once(base_url, payload, stream=stream)
+            except requests.RequestException as exc:
+                last_error = exc
+                log.warning("llm.request_failed", extra={"extra_fields": {"attempt": attempt, "error": str(exc)}})
+                continue
+            if resp.status_code < 400 and (stream or not self._is_retryable_response(resp)):
+                return resp
+            last_resp = resp
+            if not self._is_retryable_response(resp):
+                break
+            log.warning(
+                "llm.retryable_response",
+                extra={"extra_fields": {"attempt": attempt, "status": resp.status_code, "body": resp.text[:160]}},
             )
-        return resp
+        if last_resp is not None:
+            raise LLMError(f"LLM returned HTTP {last_resp.status_code}: {last_resp.text[:500]}")
+        raise LLMError(f"LLM request failed: {last_error}")
+
+    def _post(self, payload: dict[str, Any], stream: bool = False) -> requests.Response:
+        try:
+            return self._post_with_backoff(self.base_url, payload, stream=stream)
+        except LLMError as primary_error:
+            if not self.fallback_base_url and not self.fallback_model:
+                raise
+            fallback_payload = dict(payload)
+            if self.fallback_model:
+                fallback_payload["model"] = self.fallback_model
+            fallback_base = self.fallback_base_url or self.base_url
+            log.warning(
+                "llm.primary_failed_try_fallback",
+                extra={"extra_fields": {"error": str(primary_error), "fallback_base": fallback_base, "fallback_model": fallback_payload.get("model")}},
+            )
+            try:
+                return self._post_with_backoff(fallback_base, fallback_payload, stream=stream)
+            except LLMError as fallback_error:
+                raise LLMError(f"Primary LLM failed: {primary_error}; fallback failed: {fallback_error}") from fallback_error
 
     # ── Contract ───────────────────────────────────────────────────────────
     def chat(

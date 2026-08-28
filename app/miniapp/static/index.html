@@ -1028,11 +1028,13 @@ async function loadOverview(){
     }
   }catch(e){}
 
-  // Load notification preview
-  try{ await loadNotifPreview(); }catch(e){}
-  try{ await loadGoogleData(); }catch(e){}
-  try{ await loadBusinessAnalysis(); }catch(e){}
-  try{ await loadSalesPipeline(); }catch(e){}
+  // Load heavy side cards in parallel; each function handles its own errors.
+  await Promise.allSettled([
+    loadNotifPreview(),
+    loadGoogleData(),
+    loadBusinessAnalysis(),
+    loadSalesPipeline(),
+  ]);
 
   updateBadges();
 }

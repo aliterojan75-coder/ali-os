@@ -169,14 +169,19 @@ def create_app() -> Flask:
         text = parsed["text"].strip()
         if text.split()[0].lower().startswith("/whoami"):
             try:
+                if admins:
+                    lock_line = f"🔐 قفل مالکیت فعال است — {len(admins)} چت مجاز ثبت شده."
+                    guide = ""
+                else:
+                    lock_line = "⚠️ قفل مالکیت غیرفعال است — بات فعلاً به همه پاسخ می‌دهد."
+                    guide = "\n\nاین عدد را در env سرور به‌عنوان TELEGRAM_ADMIN_CHAT_ID ثبت کنید."
                 send_message(
                     chat_id=parsed["chat_id"],
-                    text=f"🆔 chat_id شما: `{parsed['chat_id']}`\n\n"
-                         "این عدد را در env سرور به‌عنوان TELEGRAM_ADMIN_CHAT_ID ثبت کنید.",
+                    text=f"🆔 chat_id شما: `{parsed['chat_id']}`\n{lock_line}{guide}",
                 )
             except Exception:  # noqa: BLE001
                 pass
-            return jsonify({"ok": True, "whoami": True})
+            return jsonify({"ok": True, "whoami": True, "owner_lock_enabled": bool(admins), "allowed_chats": len(admins)})
 
         if admins and parsed.get("chat_id") not in admins:
             log_event(
