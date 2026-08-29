@@ -1,7 +1,7 @@
-"""MiniMax-M2.7 via the Dahl inference endpoint.
+"""OpenAI-compatible LLM provider.
 
-The endpoint is OpenAI-compatible (/v1/chat/completions), so this adapter is a
-thin, defensive HTTP client. It implements the full LLMProvider contract.
+Used by Gemini API's OpenAI compatibility layer and any provider that accepts
+POST {base_url}/chat/completions with a Bearer API key.
 """
 from __future__ import annotations
 
@@ -16,10 +16,10 @@ from app.logging_config import get_logger
 
 from .base import LLMError, LLMMessage, LLMProvider, LLMResponse
 
-log = get_logger("llm.minimax")
+log = get_logger("llm.openai_compatible")
 
-# MiniMax-M2.7 emits reasoning wrapped in <think>...</think>. We keep it out of
-# user-facing answers (but could store it later for audit/debug).
+# Some reasoning models emit hidden reasoning wrapped in <think>...</think>.
+# Keep it out of user-facing answers if a provider ever returns it.
 THINK_OPEN = "<think>"
 THINK_CLOSE = "</think>"
 
@@ -37,8 +37,8 @@ def strip_reasoning(text: str) -> str:
     return text.strip()
 
 
-class MiniMaxDahlProvider(LLMProvider):
-    name = "minimax-m2.7-dahl"
+class OpenAICompatibleProvider(LLMProvider):
+    name = "openai-compatible"
 
     def __init__(self) -> None:
         self.base_url = config.LLM_BASE_URL.rstrip("/")
@@ -205,30 +205,45 @@ class MiniMaxDahlProvider(LLMProvider):
         temperature: float = 0.1,
         max_tokens: int | None = None,
     ) -> dict[str, Any]:
-        # Two attempts: plain JSON-mode, then a repair prompt.
+        # Two JSON-mode attempts, then one provider-neutral plain-text JSON
+        # attempt. Gemini's OpenAI layer supports response_format=json_object,
+        # but other compatible endpoints can be stricter or return fenced JSON.
         payload_msgs = list(messages)
+        last_error: Exception | None = None
         for attempt in range(2):
             if attempt == 1:
-                payload_msgs.append(
-                    LLMMessage(
-                        role="user",
-                        content=(
-                            "پاسخ قبلی JSON معتبر نبود. فقط یک شیء JSON معتبر "
-                            "برگردان، بدون هیچ متن اضافی، بدون تگ <think>."
-                        ),
-                    )
+                payload_msgs.append(_json_repair_message())
+            try:
+                resp = self.chat(
+                    payload_msgs,
+                    temperature=temperature,
+                    max_tokens=max_tokens or self.max_tokens,
+                    response_format={"type": "json_object"},
                 )
-            response_format = {"type": "json_object"}
-            resp = self.chat(
-                payload_msgs,
-                temperature=temperature,
-                max_tokens=max_tokens or self.max_tokens,
-                response_format=response_format,
-            )
+            except LLMError as exc:
+                last_error = exc
+                log.warning("llm.json_mode_failed", extra={"extra_fields": {"attempt": attempt, "error": str(exc)}})
+                break
             parsed = _extract_json(resp.content)
             if parsed is not None:
                 return parsed
             log.warning("llm.json_parse_failed", extra={"extra_fields": {"attempt": attempt}})
+
+        plain_msgs = list(messages) + [_json_repair_message()]
+        try:
+            resp = self.chat(
+                plain_msgs,
+                temperature=temperature,
+                max_tokens=max_tokens or self.max_tokens,
+                response_format=None,
+            )
+        except LLMError as exc:
+            if last_error is not None:
+                raise LLMError(f"Failed to get structured JSON; json_mode={last_error}; plain={exc}") from exc
+            raise
+        parsed = _extract_json(resp.content)
+        if parsed is not None:
+            return parsed
         raise LLMError("Failed to parse structured JSON after retries")
 
     def model_info(self) -> dict[str, Any]:
@@ -255,7 +270,16 @@ class MiniMaxDahlProvider(LLMProvider):
     def _to_response(self, data: dict[str, Any]) -> LLMResponse:
         choice = (data.get("choices") or [{}])[0]
         msg = choice.get("message", {}) or {}
-        content = strip_reasoning(msg.get("content", "") or "")
+        content_raw = msg.get("content", "") or ""
+        if isinstance(content_raw, list):
+            parts = []
+            for part in content_raw:
+                if isinstance(part, dict):
+                    parts.append(str(part.get("text") or part.get("content") or ""))
+                else:
+                    parts.append(str(part))
+            content_raw = "".join(parts)
+        content = strip_reasoning(str(content_raw))
         usage = data.get("usage", {}) or {}
         return LLMResponse(
             content=content,
@@ -264,6 +288,16 @@ class MiniMaxDahlProvider(LLMProvider):
             completion_tokens=int(usage.get("completion_tokens", 0) or 0),
             raw=data,
         )
+
+
+def _json_repair_message() -> LLMMessage:
+    return LLMMessage(
+        role="user",
+        content=(
+            "فقط یک شیء JSON معتبر برگردان؛ هیچ متن اضافی، markdown، code fence "
+            "یا تگ <think> ننویس."
+        ),
+    )
 
 
 def _extract_json(text: str) -> dict[str, Any] | None:

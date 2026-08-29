@@ -32,9 +32,9 @@
 
 | کلید | مقدار |
 |---|---|
-| `TELEGRAM_BOT_TOKEN` | `8619491353:AAHBXZ6kOVcVFLpR9pc8dr-OszyP95HGHQ4` |
-| `WEBHOOK_SECRET` | `ali_os_wh_9f3a7c2e8b1d` |
-| `LLM_API_KEY` | کلید API مدل (`dahl_E7WfdWXaKf35yQxGdHY5mq5sjfuUANSmn`) |
+| `TELEGRAM_BOT_TOKEN` | توکن بات تلگرام از BotFather (`sync:false`) |
+| `WEBHOOK_SECRET` | یک رشته تصادفی امن (`sync:false`) |
+| `LLM_API_KEY` | کلید Gemini API از Google AI Studio (`sync:false`؛ هرگز در گیت نگذار) |
 | `TURSO_DATABASE_URL` | `libsql://ali-os-aliterojan75-coder.aws-ap-northeast-1.turso.io` |
 | `TURSO_AUTH_TOKEN` | توکن خواندن/نوشتن Turso که ساختی |
 | `ENCRYPTION_KEY` | کلید رمزنگاری اطلاعات اتصال‌ها — با `python -m app.tools.gen_key` بساز |
@@ -46,8 +46,8 @@
 > این کلید را جایی امن نگه دار و هرگز در گیت نگذار.
 
 مقادیر زیر از قبل در `render.yaml` ست شده‌اند و لازم نیست کاری کنی:
-- `LLM_BASE_URL=https://inference.dahl.global/v1`
-- `LLM_MODEL=MiniMaxAI/MiniMax-M2.7`
+- `LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai`
+- `LLM_MODEL=gemini-3.7-flash`
 - `AUTO_SET_WEBHOOK=1`
 - `FLASK_ENV=production`
 

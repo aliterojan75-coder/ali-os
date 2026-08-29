@@ -29,9 +29,9 @@ services:
       - key: LOG_LEVEL
         value: INFO
       - key: LLM_BASE_URL
-        value: https://api.groq.com/openai/v1
+        value: https://generativelanguage.googleapis.com/v1beta/openai
       - key: LLM_MODEL
-        value: openai/gpt-oss-120b
+        value: gemini-3.7-flash
       # PUBLIC_URL is optional on Render: RENDER_EXTERNAL_URL is used automatically.
       - key: TELEGRAM_BOT_TOKEN
         sync: false

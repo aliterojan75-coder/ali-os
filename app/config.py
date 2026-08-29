@@ -37,9 +37,9 @@ class Config:
     AUTO_SET_WEBHOOK = os.environ.get("AUTO_SET_WEBHOOK", "1") == "1"
 
     # LLM
-    LLM_BASE_URL = _get("LLM_BASE_URL", default="https://inference.dahl.global/v1")
+    LLM_BASE_URL = _get("LLM_BASE_URL", default="https://generativelanguage.googleapis.com/v1beta/openai")
     LLM_API_KEY = _get("LLM_API_KEY", required=True)
-    LLM_MODEL = os.environ.get("LLM_MODEL", "MiniMaxAI/MiniMax-M2.7")
+    LLM_MODEL = os.environ.get("LLM_MODEL", "gemini-3.7-flash")
     LLM_BASE_URL_FALLBACK = os.environ.get("LLM_BASE_URL_FALLBACK", "")
     LLM_MODEL_FALLBACK = os.environ.get("LLM_MODEL_FALLBACK", "")
     LLM_TIMEOUT = int(os.environ.get("LLM_TIMEOUT", "60"))

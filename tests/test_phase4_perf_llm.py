@@ -67,15 +67,15 @@ def test_heavy_get_cache_deduplicates_and_mutation_invalidates(monkeypatch):
 
 def test_llm_retryable_cloudflare_then_fallback(monkeypatch):
     from app.config import config
-    from app.llm.minimax_dahl import MiniMaxDahlProvider
+    from app.llm.openai_compatible import OpenAICompatibleProvider
 
     monkeypatch.setattr(config, "LLM_BASE_URL", "https://primary.example/v1")
     monkeypatch.setattr(config, "LLM_MODEL", "primary-model")
     monkeypatch.setattr(config, "LLM_BASE_URL_FALLBACK", "https://fallback.example/v1")
     monkeypatch.setattr(config, "LLM_MODEL_FALLBACK", "fallback-model")
-    monkeypatch.setattr("app.llm.minimax_dahl.time.sleep", lambda s: None)
+    monkeypatch.setattr("app.llm.openai_compatible.time.sleep", lambda s: None)
 
-    p = MiniMaxDahlProvider()
+    p = OpenAICompatibleProvider()
     calls = []
 
     class Resp:
