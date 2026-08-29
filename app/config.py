@@ -37,11 +37,12 @@ class Config:
     AUTO_SET_WEBHOOK = os.environ.get("AUTO_SET_WEBHOOK", "1") == "1"
 
     # LLM
-    LLM_BASE_URL = _get("LLM_BASE_URL", default="https://generativelanguage.googleapis.com/v1beta/openai")
+    LLM_BASE_URL = _get("LLM_BASE_URL", default="https://api.groq.com/openai/v1")
     LLM_API_KEY = _get("LLM_API_KEY", required=True)
-    LLM_MODEL = os.environ.get("LLM_MODEL", "gemini-3.7-flash")
+    LLM_MODEL = os.environ.get("LLM_MODEL", "openai/gpt-oss-120b")
     LLM_BASE_URL_FALLBACK = os.environ.get("LLM_BASE_URL_FALLBACK", "")
     LLM_MODEL_FALLBACK = os.environ.get("LLM_MODEL_FALLBACK", "")
+    LLM_API_KEY_FALLBACK = os.environ.get("LLM_API_KEY_FALLBACK", "")
     LLM_TIMEOUT = int(os.environ.get("LLM_TIMEOUT", "60"))
     LLM_MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", "1200"))
 

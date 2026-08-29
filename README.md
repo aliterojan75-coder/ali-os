@@ -8,7 +8,7 @@ Telegram → Webhook → Flask/Gunicorn → Master Agent → LLM + Memory + Task
 
 ## وضعیت فعلی (MVP — Phase 1)
 - ✅ اعتبارسنجی API مدل و توکن تلگرام
-- ✅ **LLM Adapter** تمیز با رابط `LLMProvider` (OpenAI-compatible؛ پیش‌فرض Gemini API)
+- ✅ **LLM Adapter** تمیز با رابط `LLMProvider` (OpenAI-compatible؛ پیش‌فرض Groq + fallback اختیاری Gemini)
 - ✅ جداکننده‌ی تگ `<think>` از پاسخ نهایی
 - ✅ Webhook تلگرام با احراز هویت `secret_token`
 - ✅ Master Agent پایه با Intent Router
@@ -150,10 +150,10 @@ node tests/ui/fallback.test.mjs    # داشبورد بدون charts.js هم با
 
 ## LLM / Gemini
 
-- Provider پیش‌فرض `OpenAICompatibleProvider` است و با Gemini API از مسیر سازگاری OpenAI کار می‌کند.
-- در Render مقدارهای ثابت: `LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai` و `LLM_MODEL=gemini-3.7-flash`؛ فقط `LLM_API_KEY` را دستی در Render ست کن (`sync:false`).
+- Provider پیش‌فرض `OpenAICompatibleProvider` است؛ مدل اصلی فعلی Groq است و Gemini می‌تواند به‌عنوان fallback/مدل دوم کنار آن فعال شود.
+- در Render مقدارهای اصلی Groq با `LLM_BASE_URL`/`LLM_MODEL`/`LLM_API_KEY` خوانده می‌شوند و Gemini با `LLM_BASE_URL_FALLBACK`/`LLM_MODEL_FALLBACK`/`LLM_API_KEY_FALLBACK`.
 - تست curl و تست structured output زنده در [`docs/LLM.md`](docs/LLM.md) آمده است.
-- اگر مدل/endpoint خطای موقت بدهد، آداپتور retry/backoff و fallback اختیاری دارد و چت تلگرام به‌جای crash پیام فارسی «مدل موقتاً نیست، دستورهای داده‌محور کار می‌کنند» می‌دهد.
+- اگر مدل/endpoint اصلی خطای موقت بدهد، آداپتور retry/backoff و سپس fallback اختیاری دارد و چت تلگرام به‌جای crash پیام فارسی «مدل موقتاً نیست، دستورهای داده‌محور کار می‌کنند» می‌دهد.
 
 ## پنل مدیریت (Mini App)
 - مسیر: `GET /` (یا `/app`) → SPA
@@ -215,6 +215,6 @@ ali-os/
 
 ## اصول
 - هیچ Secret در کد نیست؛ همه از Environment خوانده می‌شوند.
-- LLM Provider از Business Logic جدا است؛ پیش‌فرض فعلی Gemini از مسیر OpenAI-compatible است. راهنمای تست: [`docs/LLM.md`](docs/LLM.md).
+- LLM Provider از Business Logic جدا است؛ پیش‌فرض فعلی OpenAI-compatible با Groq اصلی و Gemini fallback اختیاری است. راهنمای تست: [`docs/LLM.md`](docs/LLM.md).
 - Request layer **stateless** است؛ همه‌چیز در DB پایدار می‌شود.
 - برای کارهای مهم: Claim → Evidence → Reasoning → Decision → Action → Result.

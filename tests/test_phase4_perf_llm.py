@@ -73,10 +73,13 @@ def test_llm_retryable_cloudflare_then_fallback(monkeypatch):
     monkeypatch.setattr(config, "LLM_MODEL", "primary-model")
     monkeypatch.setattr(config, "LLM_BASE_URL_FALLBACK", "https://fallback.example/v1")
     monkeypatch.setattr(config, "LLM_MODEL_FALLBACK", "fallback-model")
+    monkeypatch.setattr(config, "LLM_API_KEY", "primary-key")
+    monkeypatch.setattr(config, "LLM_API_KEY_FALLBACK", "fallback-key")
     monkeypatch.setattr("app.llm.openai_compatible.time.sleep", lambda s: None)
 
     p = OpenAICompatibleProvider()
     calls = []
+    auths = []
 
     class Resp:
         def __init__(self, status, text, data=None):
@@ -88,6 +91,7 @@ def test_llm_retryable_cloudflare_then_fallback(monkeypatch):
 
     def fake_post(url, **kwargs):
         calls.append((url, kwargs["json"]["model"]))
+        auths.append(kwargs["headers"]["Authorization"])
         if url.startswith("https://primary"):
             return Resp(403, "<html>Just a moment... Cloudflare cf-chl</html>")
         return Resp(200, "{}", {"choices": [{"message": {"content": "ok"}}], "usage": {}})
@@ -97,3 +101,4 @@ def test_llm_retryable_cloudflare_then_fallback(monkeypatch):
     assert resp.content == "ok"
     assert len([c for c in calls if c[0].startswith("https://primary")]) == 4  # initial + 3 retries
     assert calls[-1] == ("https://fallback.example/v1/chat/completions", "fallback-model")
+    assert auths[-1] == "Bearer fallback-key"

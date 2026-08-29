@@ -46,14 +46,15 @@ class OpenAICompatibleProvider(LLMProvider):
         self.model = config.LLM_MODEL
         self.fallback_base_url = (getattr(config, "LLM_BASE_URL_FALLBACK", "") or "").rstrip("/")
         self.fallback_model = getattr(config, "LLM_MODEL_FALLBACK", "") or ""
+        self.fallback_api_key = getattr(config, "LLM_API_KEY_FALLBACK", "") or ""
         self.timeout = config.LLM_TIMEOUT
         self.max_tokens = config.LLM_MAX_TOKENS
         self._session = requests.Session()
 
     # ── HTTP ───────────────────────────────────────────────────────────────
-    def _headers(self) -> dict[str, str]:
+    def _headers(self, api_key: str | None = None) -> dict[str, str]:
         return {
-            "Authorization": f"Bearer {self.api_key}",
+            "Authorization": f"Bearer {api_key or self.api_key}",
             "Content-Type": "application/json",
         }
 
@@ -91,17 +92,29 @@ class OpenAICompatibleProvider(LLMProvider):
             or "just a moment" in text
         )
 
-    def _post_once(self, base_url: str, payload: dict[str, Any], stream: bool = False) -> requests.Response:
+    def _post_once(
+        self,
+        base_url: str,
+        payload: dict[str, Any],
+        stream: bool = False,
+        api_key: str | None = None,
+    ) -> requests.Response:
         url = f"{base_url}/chat/completions"
         return self._session.post(
             url,
-            headers=self._headers(),
+            headers=self._headers(api_key),
             json=payload,
             timeout=self.timeout,
             stream=stream,
         )
 
-    def _post_with_backoff(self, base_url: str, payload: dict[str, Any], stream: bool = False) -> requests.Response:
+    def _post_with_backoff(
+        self,
+        base_url: str,
+        payload: dict[str, Any],
+        stream: bool = False,
+        api_key: str | None = None,
+    ) -> requests.Response:
         waits = (0, 3, 8, 15)  # initial try + three retries
         last_error: Exception | None = None
         last_resp: requests.Response | None = None
@@ -109,7 +122,7 @@ class OpenAICompatibleProvider(LLMProvider):
             if wait_s:
                 time.sleep(wait_s)
             try:
-                resp = self._post_once(base_url, payload, stream=stream)
+                resp = self._post_once(base_url, payload, stream=stream, api_key=api_key)
             except requests.RequestException as exc:
                 last_error = exc
                 log.warning("llm.request_failed", extra={"extra_fields": {"attempt": attempt, "error": str(exc)}})
@@ -139,10 +152,15 @@ class OpenAICompatibleProvider(LLMProvider):
             fallback_base = self.fallback_base_url or self.base_url
             log.warning(
                 "llm.primary_failed_try_fallback",
-                extra={"extra_fields": {"error": str(primary_error), "fallback_base": fallback_base, "fallback_model": fallback_payload.get("model")}},
+                extra={"extra_fields": {"error": str(primary_error), "fallback_base": fallback_base, "fallback_model": fallback_payload.get("model"), "fallback_has_own_key": bool(self.fallback_api_key)}},
             )
             try:
-                return self._post_with_backoff(fallback_base, fallback_payload, stream=stream)
+                return self._post_with_backoff(
+                    fallback_base,
+                    fallback_payload,
+                    stream=stream,
+                    api_key=self.fallback_api_key or self.api_key,
+                )
             except LLMError as fallback_error:
                 raise LLMError(f"Primary LLM failed: {primary_error}; fallback failed: {fallback_error}") from fallback_error
 
