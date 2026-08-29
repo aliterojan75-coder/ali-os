@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from app import approvals, repositories as repo
 from app.approvals import risk as risk_mod
 from app.llm import LLMMessage, get_provider
-from app.llm.base import LLMProvider
+from app.llm.base import LLMError, LLMProvider
 from app.logging_config import get_logger, log_event
 from app.master.prompts import INTENT_SYSTEM, build_master_prompt
 
@@ -52,6 +52,14 @@ class MasterAgent:
                       payload={"intent": route.get("intent"), "confidence": route.get("confidence")})
 
             answer = self._route(route, msg, user["id"], convo["id"])
+        except LLMError as exc:
+            log.warning("master.llm_unavailable", extra={"extra_fields": {"error": str(exc)}})
+            answer = (
+                "⚠️ مدل زبانی فعلاً در دسترس نیست یا سرویس‌دهنده محدودیت داده است.\n"
+                "دستورهای داده‌محور بدون مدل همچنان کار می‌کنند: /tasks، /crm، "
+                "/finance، /morning، /business، /sales و /notify.\n"
+                "چند دقیقه بعد برای گفت‌وگوی آزاد دوباره امتحان کن."
+            )
         except Exception as exc:  # noqa: BLE001 — never crash the webhook
             log.exception("master.error", extra={"extra_fields": {"error": str(exc)}})
             answer = (

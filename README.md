@@ -8,7 +8,7 @@ Telegram → Webhook → Flask/Gunicorn → Master Agent → LLM + Memory + Task
 
 ## وضعیت فعلی (MVP — Phase 1)
 - ✅ اعتبارسنجی API مدل و توکن تلگرام
-- ✅ **LLM Adapter** تمیز با رابط `LLMProvider` (OpenAI-compatible روی Dahl / MiniMax-M2.7)
+- ✅ **LLM Adapter** تمیز با رابط `LLMProvider` (OpenAI-compatible؛ پیش‌فرض Groq + fallback اختیاری Gemini)
 - ✅ جداکننده‌ی تگ `<think>` از پاسخ نهایی
 - ✅ Webhook تلگرام با احراز هویت `secret_token`
 - ✅ Master Agent پایه با Intent Router
@@ -148,6 +148,13 @@ node tests/ui/dashboard.test.mjs   # ۳۰ بررسی رندر واقعی نمو�
 node tests/ui/fallback.test.mjs    # داشبورد بدون charts.js هم باید کار کند
 ```
 
+## LLM / Gemini
+
+- Provider پیش‌فرض `OpenAICompatibleProvider` است؛ مدل اصلی فعلی Groq است و Gemini می‌تواند به‌عنوان fallback/مدل دوم کنار آن فعال شود.
+- در Render مقدارهای اصلی Groq با `LLM_BASE_URL`/`LLM_MODEL`/`LLM_API_KEY` خوانده می‌شوند و Gemini با `LLM_BASE_URL_FALLBACK`/`LLM_MODEL_FALLBACK`/`LLM_API_KEY_FALLBACK`.
+- تست curl و تست structured output زنده در [`docs/LLM.md`](docs/LLM.md) آمده است.
+- اگر مدل/endpoint اصلی خطای موقت بدهد، آداپتور retry/backoff و سپس fallback اختیاری دارد و چت تلگرام به‌جای crash پیام فارسی «مدل موقتاً نیست، دستورهای داده‌محور کار می‌کنند» می‌دهد.
+
 ## پنل مدیریت (Mini App)
 - مسیر: `GET /` (یا `/app`) → SPA
 - API: `GET/POST /api/*` با هدر `X-Telegram-Init-Data`
@@ -195,7 +202,7 @@ ali-os/
 │   ├── seed.py             # پروژه‌ها و حافظه اولیه
 │   ├── llm/
 │   │   ├── base.py         # LLMProvider (chat/stream/structured_output/model_info/health_check)
-│   │   └── minimax_dahl.py # آداپتور MiniMax-M2.7
+│   │   └── openai_compatible.py # آداپتور عمومی OpenAI-compatible (Gemini/Groq/…)
 │   ├── master/
 │   │   ├── agent.py        # Orchestrator
 │   │   └── prompts.py
@@ -208,6 +215,6 @@ ali-os/
 
 ## اصول
 - هیچ Secret در کد نیست؛ همه از Environment خوانده می‌شوند.
-- LLM Provider از Business Logic جدا است (قابل تعویض با Kimi/OpenAI/Claude).
+- LLM Provider از Business Logic جدا است؛ پیش‌فرض فعلی OpenAI-compatible با Groq اصلی و Gemini fallback اختیاری است. راهنمای تست: [`docs/LLM.md`](docs/LLM.md).
 - Request layer **stateless** است؛ همه‌چیز در DB پایدار می‌شود.
 - برای کارهای مهم: Claim → Evidence → Reasoning → Decision → Action → Result.

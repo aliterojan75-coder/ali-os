@@ -7,6 +7,7 @@ local SQLite and on Turso/libSQL over HTTP.
 from __future__ import annotations
 
 import time
+import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -133,7 +134,12 @@ def approvals_summary() -> dict:
 
 
 def project_health() -> list[dict]:
-    """Per-project rollup used by the projects screen and the radar-ish bars."""
+    """Per-project rollup used by the projects screen.
+
+    The previous version did two extra queries per project (KPIs and
+    integrations). Against remote Turso that was seconds of latency. This keeps
+    it to three bounded round-trips: task rollup, KPI rollup, integration rollup.
+    """
     rows = db.query_all(
         """SELECT p.id, p.name, p.slug, p.status, p.domain,
                   SUM(CASE WHEN t.status NOT IN ('done','cancelled') THEN 1 ELSE 0 END) AS open_tasks,
@@ -143,15 +149,27 @@ def project_health() -> list[dict]:
            FROM projects p LEFT JOIN tasks t ON t.project_id = p.id
            GROUP BY p.id ORDER BY p.name"""
     )
+    kpi_rows = db.query_all(
+        """SELECT project_id, target_value, current_value, direction
+           FROM project_kpis"""
+    )
+    kpis_by_project: dict[int, list[sqlite3.Row]] = {}
+    for k in kpi_rows:
+        kpis_by_project.setdefault(k["project_id"], []).append(k)
+
+    conn_rows = db.query_all(
+        """SELECT project_id, COUNT(*) AS c FROM integrations
+           WHERE project_id IS NOT NULL AND status='connected'
+           GROUP BY project_id"""
+    )
+    connections = {r["project_id"]: r["c"] for r in conn_rows}
+
     out = []
     for r in rows:
         open_t = r["open_tasks"] or 0
         done_t = r["done_tasks"] or 0
         total = open_t + done_t
-        kpis = db.query_all(
-            """SELECT target_value, current_value, direction FROM project_kpis
-               WHERE project_id=?""", (r["id"],)
-        )
+        kpis = kpis_by_project.get(r["id"], [])
         kpi_scores = []
         for k in kpis:
             target, current = k["target_value"], k["current_value"]
@@ -161,10 +179,6 @@ def project_health() -> list[dict]:
                 target / current if current else 0)
             kpi_scores.append(max(0.0, min(pct, 1.5)))
         kpi_avg = round(sum(kpi_scores) / len(kpi_scores) * 100) if kpi_scores else None
-        integrations = db.query_one(
-            "SELECT COUNT(*) AS c FROM integrations WHERE project_id=? AND status='connected'",
-            (r["id"],),
-        )["c"]
         out.append({
             "id": r["id"], "name": r["name"], "slug": r["slug"],
             "status": r["status"], "domain": r["domain"],
@@ -173,7 +187,7 @@ def project_health() -> list[dict]:
             "completion": round(done_t / total * 100) if total else None,
             "kpi_score": kpi_avg,
             "kpi_count": len(kpis),
-            "connections": integrations,
+            "connections": connections.get(r["id"], 0),
         })
     return out
 
@@ -201,19 +215,21 @@ def kpi_overview(limit: int = 8) -> list[dict]:
 
 
 def velocity() -> dict:
-    """This week vs. last week — the 'are we speeding up?' number."""
+    """This week vs. last week — one SQL round-trip even on remote Turso."""
     now = time.time()
     week, two_weeks = now - 7 * 86400, now - 14 * 86400
 
-    def _count(sql: str, params: tuple) -> int:
-        return db.query_one(sql, params)["c"]
-
-    this_done = _count(
-        "SELECT COUNT(*) AS c FROM tasks WHERE status='done' AND updated_at >= ?", (week,))
-    last_done = _count(
-        """SELECT COUNT(*) AS c FROM tasks WHERE status='done'
-           AND updated_at >= ? AND updated_at < ?""", (two_weeks, week))
-    this_created = _count("SELECT COUNT(*) AS c FROM tasks WHERE created_at >= ?", (week,))
+    row = db.query_one(
+        """SELECT
+             SUM(CASE WHEN status='done' AND updated_at >= ? THEN 1 ELSE 0 END) AS this_done,
+             SUM(CASE WHEN status='done' AND updated_at >= ? AND updated_at < ? THEN 1 ELSE 0 END) AS last_done,
+             SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) AS this_created
+           FROM tasks""",
+        (week, two_weeks, week, week),
+    ) or {}
+    this_done = int(row["this_done"] or 0)
+    last_done = int(row["last_done"] or 0)
+    this_created = int(row["this_created"] or 0)
 
     change = None
     if last_done:
@@ -261,31 +277,95 @@ def content_overview() -> dict:
 
 
 def business_overview() -> dict:
+    """Small dashboard business card without invoking the full agent.
+
+    Full `/api/business/analysis` remains available (and cached); the overview
+    card only needs counts and top recommendations, so one SELECT with
+    subqueries avoids a cascade of Turso round-trips on every dashboard load.
+    """
     try:
-        from app.agents.business_analyst import analyze_business
-        a = analyze_business()
+        now = time.time()
+        stale_cutoff = now - 14 * 86400
+        row = db.query_one(
+            """SELECT
+              (SELECT COUNT(*) FROM tasks WHERE status NOT IN ('done','cancelled')) AS open_tasks,
+              (SELECT COUNT(*) FROM tasks WHERE due_at IS NOT NULL AND due_at < ? AND status NOT IN ('done','cancelled')) AS overdue_tasks,
+              (SELECT COUNT(*) FROM tasks WHERE priority IN ('urgent','high') AND status NOT IN ('done','cancelled')) AS hot_tasks,
+              (SELECT COUNT(*) FROM crm_deals) AS deals_total,
+              (SELECT COUNT(*) FROM crm_deals WHERE stage NOT IN ('won','lost') AND updated_at < ?) AS stale_deals,
+              (SELECT COUNT(*) FROM crm_interactions WHERE next_follow_up_at IS NOT NULL AND next_follow_up_at <= ?) AS overdue_followups,
+              (SELECT COUNT(*) FROM content_drafts WHERE status IN ('draft','pending_approval')) AS unpublished_content,
+              (SELECT COUNT(*) FROM pending_actions WHERE status IN ('pending','confirming')) AS pending_approvals
+            """,
+            (now, stale_cutoff, now),
+        ) or {}
+        counts = {k: int(row[k] or 0) for k in (
+            "open_tasks", "overdue_tasks", "hot_tasks", "deals_total",
+            "stale_deals", "overdue_followups", "unpublished_content",
+            "pending_approvals",
+        )}
+        deductions = (
+            counts["overdue_tasks"] * 4 + counts["hot_tasks"] * 2 +
+            counts["stale_deals"] * 5 + counts["overdue_followups"] * 5 +
+            max(0, counts["pending_approvals"] - 5) * 3
+        )
+        score = max(0, min(100, 100 - deductions))
+        recs: list[str] = []
+        if counts["overdue_tasks"]:
+            recs.append("اول تسک‌های معوق را تعیین تکلیف کن")
+        if counts["overdue_followups"]:
+            recs.append("پیگیری‌های معوق CRM را تماس بگیر")
+        if counts["stale_deals"]:
+            recs.append("معاملات راکد را پیگیری یا مرحله را به‌روزرسانی کن")
+        if counts["pending_approvals"] > 5:
+            recs.append("صف تأیید را خلوت کن")
+        insights_count = sum(1 for k in ("overdue_tasks", "hot_tasks", "stale_deals", "overdue_followups", "unpublished_content") if counts[k])
         return {
-            "health_score": a["health_score"],
-            "health_label": a["health_label"],
-            "insights_count": len(a["insights"]),
-            "recommendations": a["recommendations"][:3],
-            "counts": a["counts"],
+            "health_score": score,
+            "health_label": "عالی" if score >= 85 else "خوب" if score >= 70 else "متوسط" if score >= 50 else "نیاز به توجه",
+            "insights_count": insights_count,
+            "recommendations": recs[:3],
+            "counts": counts,
         }
     except Exception:
         return {"health_score": 0, "health_label": "—", "insights_count": 0, "recommendations": [], "counts": {}}
 
 
 def sales_overview() -> dict:
+    """Small sales card in one grouped query."""
     try:
-        from app.agents.sales_agent import analyze_sales_pipeline
-        p = analyze_sales_pipeline()
+        now = time.time()
+        stale_cutoff = now - 7 * 86400
+        close_until = now + 7 * 86400
+        rows = db.query_all(
+            """SELECT stage, COUNT(*) AS c,
+                      COALESCE(SUM(CASE WHEN stage NOT IN ('won','lost') THEN amount ELSE 0 END),0) AS open_amount,
+                      COALESCE(SUM(CASE WHEN stage NOT IN ('won','lost') THEN amount * COALESCE(probability,50) / 100.0 ELSE 0 END),0) AS weighted,
+                      SUM(CASE WHEN stage NOT IN ('won','lost') AND updated_at < ? THEN 1 ELSE 0 END) AS stale,
+                      SUM(CASE WHEN stage NOT IN ('won','lost') AND expected_close_at IS NOT NULL AND expected_close_at >= ? AND expected_close_at <= ? THEN 1 ELSE 0 END) AS closing
+               FROM crm_deals GROUP BY stage""",
+            (stale_cutoff, now, close_until),
+        )
+        by_stage: dict[str, int] = {}
+        total = 0
+        pipeline = 0.0
+        weighted = 0.0
+        stale = 0
+        closing = 0
+        for r in rows:
+            by_stage[r["stage"]] = r["c"]
+            total += r["c"]
+            pipeline += float(r["open_amount"] or 0)
+            weighted += float(r["weighted"] or 0)
+            stale += int(r["stale"] or 0)
+            closing += int(r["closing"] or 0)
         return {
-            "total_deals": p["total_deals"],
-            "pipeline_value": p["pipeline_value"],
-            "weighted_value": p["weighted_value"],
-            "by_stage": p["by_stage"],
-            "stale_count": len(p["stale_deals"]),
-            "closing_soon_count": len(p["closing_soon"]),
+            "total_deals": total,
+            "pipeline_value": pipeline,
+            "weighted_value": weighted,
+            "by_stage": by_stage,
+            "stale_count": stale,
+            "closing_soon_count": closing,
         }
     except Exception:
         return {"total_deals": 0, "pipeline_value": 0, "weighted_value": 0, "by_stage": {}, "stale_count": 0, "closing_soon_count": 0}
@@ -327,32 +407,33 @@ def gsc_trend_overview() -> dict:
 
 
 def overview() -> dict:
-    """Everything the dashboard needs, in one round-trip."""
-    counts = {}
-    for key, sql in {
-        "open_tasks": "SELECT COUNT(*) AS c FROM tasks WHERE status NOT IN ('done','cancelled')",
-        "done_tasks": "SELECT COUNT(*) AS c FROM tasks WHERE status='done'",
-        "active_projects": "SELECT COUNT(*) AS c FROM projects WHERE status='active'",
-        "decisions": "SELECT COUNT(*) AS c FROM decisions",
-        "memories": "SELECT COUNT(*) AS c FROM memories",
-        "events": "SELECT COUNT(*) AS c FROM events",
-        "connections": "SELECT COUNT(*) AS c FROM integrations WHERE status='connected'",
-        "crm_contacts": "SELECT COUNT(*) AS c FROM crm_contacts WHERE status != 'archived'",
-        "crm_deals": "SELECT COUNT(*) AS c FROM crm_deals WHERE stage NOT IN ('won','lost')",
-        "notifications": "SELECT COUNT(*) AS c FROM notifications WHERE is_read=0",
-    }.items():
-        try:
-            counts[key] = db.query_one(sql)["c"]
-        except Exception:
-            counts[key] = 0
-
-    # Overdue tasks quick count
+    """Everything the dashboard needs, with the hot counts collapsed to one SELECT."""
+    now = time.time()
     try:
-        now = time.time()
-        overdue = db.query_one("SELECT COUNT(*) AS c FROM tasks WHERE due_at IS NOT NULL AND due_at < ? AND status NOT IN ('done','cancelled')", (now,))["c"]
-        counts["overdue_tasks"] = overdue
+        row = db.query_one(
+            """SELECT
+              (SELECT COUNT(*) FROM tasks WHERE status NOT IN ('done','cancelled')) AS open_tasks,
+              (SELECT COUNT(*) FROM tasks WHERE status='done') AS done_tasks,
+              (SELECT COUNT(*) FROM tasks WHERE due_at IS NOT NULL AND due_at < ? AND status NOT IN ('done','cancelled')) AS overdue_tasks,
+              (SELECT COUNT(*) FROM projects WHERE status='active') AS active_projects,
+              (SELECT COUNT(*) FROM decisions) AS decisions,
+              (SELECT COUNT(*) FROM memories) AS memories,
+              (SELECT COUNT(*) FROM events) AS events,
+              (SELECT COUNT(*) FROM integrations WHERE status='connected') AS connections,
+              (SELECT COUNT(*) FROM crm_contacts WHERE status != 'archived') AS crm_contacts,
+              (SELECT COUNT(*) FROM crm_deals WHERE stage NOT IN ('won','lost')) AS crm_deals,
+              (SELECT COUNT(*) FROM notifications WHERE is_read=0) AS notifications
+            """,
+            (now,),
+        )
+        keys = ("open_tasks", "done_tasks", "overdue_tasks", "active_projects",
+                "decisions", "memories", "events", "connections",
+                "crm_contacts", "crm_deals", "notifications")
+        counts = {k: int(row[k] or 0) for k in keys} if row else {}
     except Exception:
-        counts["overdue_tasks"] = 0
+        counts = {k: 0 for k in ("open_tasks", "done_tasks", "overdue_tasks", "active_projects",
+                                 "decisions", "memories", "events", "connections",
+                                 "crm_contacts", "crm_deals", "notifications")}
 
     return {
         "counts": counts,

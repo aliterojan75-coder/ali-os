@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from typing import Any
+import time
+from functools import wraps
+from typing import Any, Callable
 
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request
 
 from app import db, repositories as repo
 from app.config import config
@@ -15,6 +17,53 @@ from app.miniapp.auth import verify_init_data
 log = get_logger("miniapp.api")
 
 api = Blueprint("api", __name__, url_prefix="/api")
+
+
+# ── Tiny in-process read-through cache for heavy dashboard GETs ─────────────
+# Render currently runs a single Gunicorn worker; this cache removes back-to-back
+# duplicate dashboard reads and is deliberately short-lived so external changes
+# do not stay stale. Any Mini App mutation clears it below.
+_HEAVY_GET_CACHE: dict[tuple, tuple[float, bytes, int, list[tuple[str, str]]]] = {}
+_CACHE_TTL_SECONDS = 45.0
+
+
+def clear_heavy_get_cache() -> None:
+    _HEAVY_GET_CACHE.clear()
+
+
+def cache_heavy_get(ttl: float = _CACHE_TTL_SECONDS):
+    def deco(fn: Callable):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            if request.method != "GET" or request.args.get("fresh") == "1":
+                return fn(*args, **kwargs)
+            user_id = (getattr(g, "telegram_user", {}) or {}).get("id")
+            key = (request.path, tuple(sorted(request.args.items())), user_id)
+            now = time.time()
+            cached = _HEAVY_GET_CACHE.get(key)
+            if cached and cached[0] > now:
+                expires, body, status, headers = cached
+                resp = current_app.response_class(body, status=status, headers=headers)
+                resp.headers["X-Ali-OS-Cache"] = "HIT"
+                resp.headers["X-Ali-OS-Cache-TTL"] = str(max(0, int(expires - now)))
+                return resp
+            resp = current_app.make_response(fn(*args, **kwargs))
+            if resp.status_code == 200:
+                headers = [(k, v) for k, v in resp.headers.items()
+                           if k.lower() not in {"content-length", "content-encoding"}]
+                _HEAVY_GET_CACHE[key] = (now + ttl, resp.get_data(), resp.status_code, headers)
+                resp.headers["X-Ali-OS-Cache"] = "MISS"
+            return resp
+        return wrapper
+    return deco
+
+
+@api.after_request
+def _invalidate_heavy_get_cache_after_mutation(resp):
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        clear_heavy_get_cache()
+    return resp
+
 
 
 # ── Auth ────────────────────────────────────────────────────────────────────
@@ -84,6 +133,7 @@ def stats():
 
 
 @api.get("/analytics")
+@cache_heavy_get()
 def analytics():
     """Everything the dashboard charts need, in a single round-trip."""
     from app.miniapp import analytics as an
@@ -813,6 +863,7 @@ def crm_stats_api():
 # ── Notifications (§18) ──────────────────────────────────────────────────────
 
 @api.get("/notifications")
+@cache_heavy_get()
 def notifications_list():
     from app.notifications.service import generate_notifications, list_persisted_notifications, get_notification_summary
 
@@ -1034,6 +1085,7 @@ def content_seo_audit_api(draft_uid: str):
 
 
 @api.get("/content/stats")
+@cache_heavy_get()
 def content_stats_api():
     from app.content.repository import content_stats
 
@@ -1314,6 +1366,7 @@ def ga4_report_api():
 
 @api.get("/business/analysis")
 @api.get("/projects/<slug>/business")
+@cache_heavy_get()
 def business_analysis_api(slug: str | None = None):
     from app.agents.business_analyst import analyze_business
 
@@ -1335,6 +1388,7 @@ def business_analysis_api(slug: str | None = None):
 
 @api.get("/sales/pipeline")
 @api.get("/projects/<slug>/sales")
+@cache_heavy_get()
 def sales_pipeline_api(slug: str | None = None):
     from app.agents.sales_agent import analyze_sales_pipeline
 

@@ -271,47 +271,47 @@ def delete_deal(deal_uid: str) -> bool:
 
 
 def crm_stats(project_id: int | None = None) -> dict:
-    """Quick stats for dashboard."""
-    params = []
-    where = ""
-    if project_id is not None:
-        where = " WHERE project_id=?"
-        params.append(project_id)
+    """Quick stats for dashboard — collapsed to a few remote-safe queries."""
+    params: tuple[Any, ...] = (project_id,) if project_id is not None else ()
+    where = " WHERE project_id=?" if project_id is not None else ""
 
-    def _count(table: str, extra: str = "", extra_params: tuple = ()):
-        sql = f"SELECT COUNT(*) AS c FROM {table}{where}"
-        if extra:
-            sql += f" AND {extra}" if where else f" WHERE {extra}"
-        all_params = tuple(params) + extra_params
-        row = db.query_one(sql, all_params)
-        return row["c"] if row else 0
+    contact_rows = db.query_all(
+        f"SELECT status, COUNT(*) AS c FROM crm_contacts{where} GROUP BY status",
+        params,
+    )
+    contacts_by_status = {st: 0 for st in CONTACT_STATUSES}
+    for r in contact_rows:
+        contacts_by_status[r["status"]] = r["c"]
+    contacts_total = sum(contacts_by_status.values())
 
-    def _sum(table: str, field: str, extra: str = "", extra_params: tuple = ()):
-        sql = f"SELECT COALESCE(SUM({field}),0) AS s FROM {table}{where}"
-        if extra:
-            sql += f" AND {extra}" if where else f" WHERE {extra}"
-        all_params = tuple(params) + extra_params
-        row = db.query_one(sql, all_params)
-        return float(row["s"]) if row else 0.0
-
-    contacts_total = _count("crm_contacts")
-    contacts_by_status = {}
-    for st in CONTACT_STATUSES:
-        contacts_by_status[st] = _count("crm_contacts", "status=?", (st,))
-
-    deals_total = _count("crm_deals")
-    deals_by_stage = {}
-    for st in DEAL_STAGES:
-        deals_by_stage[st] = _count("crm_deals", "stage=?", (st,))
-
-    open_deals_amount = _sum("crm_deals", "amount", "stage NOT IN ('won','lost')")
-    won_amount = _sum("crm_deals", "amount", "stage='won'")
+    deal_rows = db.query_all(
+        f"""SELECT stage, COUNT(*) AS c, COALESCE(SUM(amount),0) AS amount
+             FROM crm_deals{where} GROUP BY stage""",
+        params,
+    )
+    deals_by_stage = {st: 0 for st in DEAL_STAGES}
+    deals_total = 0
+    open_deals_amount = 0.0
+    won_amount = 0.0
+    for r in deal_rows:
+        stage = r["stage"]
+        count = r["c"]
+        amount = float(r["amount"] or 0)
+        deals_by_stage[stage] = count
+        deals_total += count
+        if stage not in ("won", "lost"):
+            open_deals_amount += amount
+        elif stage == "won":
+            won_amount += amount
 
     now = db.now()
-    overdue_followups = db.query_one(
-        "SELECT COUNT(*) AS c FROM crm_interactions WHERE next_follow_up_at IS NOT NULL AND next_follow_up_at <= ?" + (f" AND project_id=?" if project_id else ""),
-        (now, project_id) if project_id else (now,),
-    )["c"]
+    overdue_sql = (
+        "SELECT COUNT(*) AS c FROM crm_interactions "
+        "WHERE next_follow_up_at IS NOT NULL AND next_follow_up_at <= ?"
+        + (" AND project_id=?" if project_id is not None else "")
+    )
+    overdue_params = (now, project_id) if project_id is not None else (now,)
+    overdue_followups = db.query_one(overdue_sql, overdue_params)["c"]
 
     return {
         "contacts_total": contacts_total,

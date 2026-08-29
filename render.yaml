@@ -18,7 +18,7 @@ services:
     region: frankfurt
     branch: main
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120 --access-logfile - --error-logfile -"
+    startCommand: "gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 120 --access-logfile - --error-logfile -"
     healthCheckPath: /health
     autoDeploy: true
     envVars:
@@ -38,6 +38,14 @@ services:
       - key: WEBHOOK_SECRET
         sync: false
       - key: LLM_API_KEY
+        sync: false
+      # Optional second model/provider: Gemini via OpenAI compatibility.
+      # Set LLM_API_KEY_FALLBACK manually in Render; keep the primary Groq envs above unchanged.
+      - key: LLM_BASE_URL_FALLBACK
+        value: https://generativelanguage.googleapis.com/v1beta/openai
+      - key: LLM_MODEL_FALLBACK
+        value: gemini-3.7-flash
+      - key: LLM_API_KEY_FALLBACK
         sync: false
       - key: TURSO_DATABASE_URL
         sync: false

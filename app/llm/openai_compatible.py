@@ -1,11 +1,12 @@
-"""MiniMax-M2.7 via the Dahl inference endpoint.
+"""OpenAI-compatible LLM provider.
 
-The endpoint is OpenAI-compatible (/v1/chat/completions), so this adapter is a
-thin, defensive HTTP client. It implements the full LLMProvider contract.
+Used by Gemini API's OpenAI compatibility layer and any provider that accepts
+POST {base_url}/chat/completions with a Bearer API key.
 """
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, Iterator
 
 import requests
@@ -15,10 +16,10 @@ from app.logging_config import get_logger
 
 from .base import LLMError, LLMMessage, LLMProvider, LLMResponse
 
-log = get_logger("llm.minimax")
+log = get_logger("llm.openai_compatible")
 
-# MiniMax-M2.7 emits reasoning wrapped in <think>...</think>. We keep it out of
-# user-facing answers (but could store it later for audit/debug).
+# Some reasoning models emit hidden reasoning wrapped in <think>...</think>.
+# Keep it out of user-facing answers if a provider ever returns it.
 THINK_OPEN = "<think>"
 THINK_CLOSE = "</think>"
 
@@ -36,21 +37,24 @@ def strip_reasoning(text: str) -> str:
     return text.strip()
 
 
-class MiniMaxDahlProvider(LLMProvider):
-    name = "minimax-m2.7-dahl"
+class OpenAICompatibleProvider(LLMProvider):
+    name = "openai-compatible"
 
     def __init__(self) -> None:
         self.base_url = config.LLM_BASE_URL.rstrip("/")
         self.api_key = config.LLM_API_KEY
         self.model = config.LLM_MODEL
+        self.fallback_base_url = (getattr(config, "LLM_BASE_URL_FALLBACK", "") or "").rstrip("/")
+        self.fallback_model = getattr(config, "LLM_MODEL_FALLBACK", "") or ""
+        self.fallback_api_key = getattr(config, "LLM_API_KEY_FALLBACK", "") or ""
         self.timeout = config.LLM_TIMEOUT
         self.max_tokens = config.LLM_MAX_TOKENS
         self._session = requests.Session()
 
     # ── HTTP ───────────────────────────────────────────────────────────────
-    def _headers(self) -> dict[str, str]:
+    def _headers(self, api_key: str | None = None) -> dict[str, str]:
         return {
-            "Authorization": f"Bearer {self.api_key}",
+            "Authorization": f"Bearer {api_key or self.api_key}",
             "Content-Type": "application/json",
         }
 
@@ -61,9 +65,10 @@ class MiniMaxDahlProvider(LLMProvider):
         max_tokens: int | None,
         stream: bool,
         response_format: dict | None,
+        model: str | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
-            "model": self.model,
+            "model": model or self.model,
             "messages": [
                 {"role": m.role, "content": m.content}
                 for m in messages
@@ -77,25 +82,87 @@ class MiniMaxDahlProvider(LLMProvider):
             payload["response_format"] = response_format
         return payload
 
-    def _post(self, payload: dict[str, Any], stream: bool = False) -> requests.Response:
-        url = f"{self.base_url}/chat/completions"
-        try:
-            resp = self._session.post(
-                url,
-                headers=self._headers(),
-                json=payload,
-                timeout=self.timeout,
-                stream=stream,
-            )
-        except requests.RequestException as exc:
-            raise LLMError(f"LLM request failed: {exc}") from exc
+    def _is_retryable_response(self, resp: requests.Response) -> bool:
+        text = (resp.text or "")[:2000].lower()
+        return (
+            resp.status_code in {403, 404, 429}
+            or "cloudflare" in text
+            or "cf-chl" in text
+            or "checking your browser" in text
+            or "just a moment" in text
+        )
 
-        if resp.status_code >= 400:
-            # Never log the key; just status + body
-            raise LLMError(
-                f"LLM returned HTTP {resp.status_code}: {resp.text[:500]}"
+    def _post_once(
+        self,
+        base_url: str,
+        payload: dict[str, Any],
+        stream: bool = False,
+        api_key: str | None = None,
+    ) -> requests.Response:
+        url = f"{base_url}/chat/completions"
+        return self._session.post(
+            url,
+            headers=self._headers(api_key),
+            json=payload,
+            timeout=self.timeout,
+            stream=stream,
+        )
+
+    def _post_with_backoff(
+        self,
+        base_url: str,
+        payload: dict[str, Any],
+        stream: bool = False,
+        api_key: str | None = None,
+    ) -> requests.Response:
+        waits = (0, 3, 8, 15)  # initial try + three retries
+        last_error: Exception | None = None
+        last_resp: requests.Response | None = None
+        for attempt, wait_s in enumerate(waits):
+            if wait_s:
+                time.sleep(wait_s)
+            try:
+                resp = self._post_once(base_url, payload, stream=stream, api_key=api_key)
+            except requests.RequestException as exc:
+                last_error = exc
+                log.warning("llm.request_failed", extra={"extra_fields": {"attempt": attempt, "error": str(exc)}})
+                continue
+            if resp.status_code < 400 and (stream or not self._is_retryable_response(resp)):
+                return resp
+            last_resp = resp
+            if not self._is_retryable_response(resp):
+                break
+            log.warning(
+                "llm.retryable_response",
+                extra={"extra_fields": {"attempt": attempt, "status": resp.status_code, "body": resp.text[:160]}},
             )
-        return resp
+        if last_resp is not None:
+            raise LLMError(f"LLM returned HTTP {last_resp.status_code}: {last_resp.text[:500]}")
+        raise LLMError(f"LLM request failed: {last_error}")
+
+    def _post(self, payload: dict[str, Any], stream: bool = False) -> requests.Response:
+        try:
+            return self._post_with_backoff(self.base_url, payload, stream=stream)
+        except LLMError as primary_error:
+            if not self.fallback_base_url and not self.fallback_model:
+                raise
+            fallback_payload = dict(payload)
+            if self.fallback_model:
+                fallback_payload["model"] = self.fallback_model
+            fallback_base = self.fallback_base_url or self.base_url
+            log.warning(
+                "llm.primary_failed_try_fallback",
+                extra={"extra_fields": {"error": str(primary_error), "fallback_base": fallback_base, "fallback_model": fallback_payload.get("model"), "fallback_has_own_key": bool(self.fallback_api_key)}},
+            )
+            try:
+                return self._post_with_backoff(
+                    fallback_base,
+                    fallback_payload,
+                    stream=stream,
+                    api_key=self.fallback_api_key or self.api_key,
+                )
+            except LLMError as fallback_error:
+                raise LLMError(f"Primary LLM failed: {primary_error}; fallback failed: {fallback_error}") from fallback_error
 
     # ── Contract ───────────────────────────────────────────────────────────
     def chat(
@@ -156,30 +223,45 @@ class MiniMaxDahlProvider(LLMProvider):
         temperature: float = 0.1,
         max_tokens: int | None = None,
     ) -> dict[str, Any]:
-        # Two attempts: plain JSON-mode, then a repair prompt.
+        # Two JSON-mode attempts, then one provider-neutral plain-text JSON
+        # attempt. Gemini's OpenAI layer supports response_format=json_object,
+        # but other compatible endpoints can be stricter or return fenced JSON.
         payload_msgs = list(messages)
+        last_error: Exception | None = None
         for attempt in range(2):
             if attempt == 1:
-                payload_msgs.append(
-                    LLMMessage(
-                        role="user",
-                        content=(
-                            "پاسخ قبلی JSON معتبر نبود. فقط یک شیء JSON معتبر "
-                            "برگردان، بدون هیچ متن اضافی، بدون تگ <think>."
-                        ),
-                    )
+                payload_msgs.append(_json_repair_message())
+            try:
+                resp = self.chat(
+                    payload_msgs,
+                    temperature=temperature,
+                    max_tokens=max_tokens or self.max_tokens,
+                    response_format={"type": "json_object"},
                 )
-            response_format = {"type": "json_object"}
-            resp = self.chat(
-                payload_msgs,
-                temperature=temperature,
-                max_tokens=max_tokens or self.max_tokens,
-                response_format=response_format,
-            )
+            except LLMError as exc:
+                last_error = exc
+                log.warning("llm.json_mode_failed", extra={"extra_fields": {"attempt": attempt, "error": str(exc)}})
+                break
             parsed = _extract_json(resp.content)
             if parsed is not None:
                 return parsed
             log.warning("llm.json_parse_failed", extra={"extra_fields": {"attempt": attempt}})
+
+        plain_msgs = list(messages) + [_json_repair_message()]
+        try:
+            resp = self.chat(
+                plain_msgs,
+                temperature=temperature,
+                max_tokens=max_tokens or self.max_tokens,
+                response_format=None,
+            )
+        except LLMError as exc:
+            if last_error is not None:
+                raise LLMError(f"Failed to get structured JSON; json_mode={last_error}; plain={exc}") from exc
+            raise
+        parsed = _extract_json(resp.content)
+        if parsed is not None:
+            return parsed
         raise LLMError("Failed to parse structured JSON after retries")
 
     def model_info(self) -> dict[str, Any]:
@@ -206,7 +288,16 @@ class MiniMaxDahlProvider(LLMProvider):
     def _to_response(self, data: dict[str, Any]) -> LLMResponse:
         choice = (data.get("choices") or [{}])[0]
         msg = choice.get("message", {}) or {}
-        content = strip_reasoning(msg.get("content", "") or "")
+        content_raw = msg.get("content", "") or ""
+        if isinstance(content_raw, list):
+            parts = []
+            for part in content_raw:
+                if isinstance(part, dict):
+                    parts.append(str(part.get("text") or part.get("content") or ""))
+                else:
+                    parts.append(str(part))
+            content_raw = "".join(parts)
+        content = strip_reasoning(str(content_raw))
         usage = data.get("usage", {}) or {}
         return LLMResponse(
             content=content,
@@ -215,6 +306,16 @@ class MiniMaxDahlProvider(LLMProvider):
             completion_tokens=int(usage.get("completion_tokens", 0) or 0),
             raw=data,
         )
+
+
+def _json_repair_message() -> LLMMessage:
+    return LLMMessage(
+        role="user",
+        content=(
+            "فقط یک شیء JSON معتبر برگردان؛ هیچ متن اضافی، markdown، code fence "
+            "یا تگ <think> ننویس."
+        ),
+    )
 
 
 def _extract_json(text: str) -> dict[str, Any] | None:
